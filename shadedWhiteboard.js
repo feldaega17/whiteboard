@@ -190,7 +190,7 @@ function loadImageTexture(url) {
   image.src = url;
   image.onload = function () {
     gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); // Reset to default
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
     gl.generateMipmap(gl.TEXTURE_2D);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
@@ -325,30 +325,30 @@ function buildWhiteboard() {
   const wheelRadius = 0.05,
     wheelWidth = 0.03;
   const wheelRotation = rotateZ(90);
-  createCylinder(
-    wheelRadius,
-    wheelWidth,
-    materials.wheels,
-    mult(translate(-standOffset, wheelYPos, -wheelOffsetZ), wheelRotation)
-  );
-  createCylinder(
-    wheelRadius,
-    wheelWidth,
-    materials.wheels,
-    mult(translate(-standOffset, wheelYPos, wheelOffsetZ), wheelRotation)
-  );
-  createCylinder(
-    wheelRadius,
-    wheelWidth,
-    materials.wheels,
-    mult(translate(standOffset, wheelYPos, -wheelOffsetZ), wheelRotation)
-  );
-  createCylinder(
-    wheelRadius,
-    wheelWidth,
-    materials.wheels,
-    mult(translate(standOffset, wheelYPos, wheelOffsetZ), wheelRotation)
-  );
+  // createCylinder(
+  //   wheelRadius,
+  //   wheelWidth,
+  //   materials.wheels,
+  //   mult(translate(-standOffset, wheelYPos, -wheelOffsetZ), wheelRotation)
+  // );
+  // createCylinder(
+  //   wheelRadius,
+  //   wheelWidth,
+  //   materials.wheels,
+  //   mult(translate(-standOffset, wheelYPos, wheelOffsetZ), wheelRotation)
+  // );
+  // createCylinder(
+  //   wheelRadius,
+  //   wheelWidth,
+  //   materials.wheels,
+  //   mult(translate(standOffset, wheelYPos, -wheelOffsetZ), wheelRotation)
+  // );
+  // createCylinder(
+  //   wheelRadius,
+  //   wheelWidth,
+  //   materials.wheels,
+  //   mult(translate(standOffset, wheelYPos, wheelOffsetZ), wheelRotation)
+  // );
 }
 
 function createPrism(

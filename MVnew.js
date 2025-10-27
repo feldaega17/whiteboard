@@ -403,9 +403,9 @@ function mult( u, v )
       }
       return result;
     }
-   if(v.type = 'mat2') result = mat2();
-   if(v.type = 'mat3') result = mat3();
-   if(v.type = 'mat4') result = mat4();
+   if(v.type == 'mat2') result = mat2();
+   if(v.type == 'mat3') result = mat3();
+   if(v.type == 'mat4') result = mat4();
   }
   if(u.type=='mat2' && v.type == 'vec2') {
     var result = vec2();
