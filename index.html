@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <title>3D Papan Tulis</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: "Segoe UI", Arial, sans-serif;
+        background: #f5f6fa;
+        color: #2c3e50;
+      }
+      header {
+        background: linear-gradient(135deg, #4a90e2, #0077b6);
+        color: white;
+        padding: 20px;
+        text-align: center;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+      }
+      header h1 {
+        margin: 0;
+        font-size: 24px;
+      }
+      header p {
+        margin: 4px 0 0;
+        font-size: 14px;
+      }
+      main {
+        display: flex;
+        flex-wrap: wrap;
+        padding: 20px;
+        gap: 20px;
+        justify-content: center;
+      }
+      .card {
+        background: white;
+        border-radius: 12px;
+        padding: 16px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+      }
+      #gl-canvas {
+        display: block;
+        border-radius: 12px;
+        background: #e6e6e6;
+      }
+      #controls {
+        max-width: 300px;
+      }
+      #controls h3 {
+        margin-top: 0;
+        font-size: 16px;
+        color: #0077b6;
+      }
+      #controls button {
+        background: #0077b6;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        padding: 8px 12px;
+        margin: 4px 0;
+        cursor: pointer;
+        transition: 0.2s;
+      }
+      #controls button:hover {
+        background: #005f87;
+      }
+      #controls input[type="range"] {
+        width: 100%;
+      }
+      #photo-container h3 {
+        margin-top: 0;
+        font-size: 16px;
+        color: #0077b6;
+      }
+      #photo-container img {
+        max-width: 100%;
+        border-radius: 8px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+        margin: 6px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Objek Papan Tulis 3D (Phong Shading)</h1>
+      <p>Gunakan mouse, keyboard, atau tombol di bawah untuk berinteraksi</p>
+    </header>
+
+    <main>
+      <div class="card">
+        <canvas id="gl-canvas" width="700" height="500">
+          Browser Anda tidak mendukung HTML5 canvas.
+        </canvas>
+      </div>
+
+      <div class="card" id="controls">
+        <h3>Kontrol Interaksi</h3>
+        <button id="reset-button">🔄 Reset Tampilan</button>
+        <button id="board-rotation-toggle">↔️ Mode: Putar Semua Objek</button>
+        <button id="projection-toggle">🔭 Mode: Proyeksi Perspektif</button>
+        <button id="auto-rotate-toggle">▶️ Mulai Rotasi Otomatis</button>
+        <hr />
+        <strong>Skala (Dilatasi)</strong><br />
+        Horizontal:
+        <input
+          type="range"
+          id="scale-x"
+          min="0.5"
+          max="2.0"
+          step="0.1"
+          value="1.0"
+        />
+        Vertikal:
+        <input
+          type="range"
+          id="scale-y"
+          min="0.5"
+          max="2.0"
+          step="0.1"
+          value="1.0"
+        />
+        <hr />
+        <p>
+          <b>Tips:</b><br />Gunakan <kbd>WASD</kbd> untuk rotasi<br />
+          Gunakan <kbd>Tombol Panah</kbd> untuk menggeser<br />
+          <kbd>Scroll</kbd> atau <kbd>+/-</kbd> untuk zoom
+        </p>
+      </div>
+
+      <div class="card" id="lighting-controls">
+        <h3>Kontrol Pencahayaan</h3>
+        <button id="auto-light-toggle">▶️ Mulai Gerak Cahaya Otomatis</button>
+        <hr />
+        <strong>Posisi Cahaya</strong><br />
+        X:
+        <input
+          type="range"
+          id="light-x"
+          min="-10"
+          max="10"
+          step="0.5"
+          value="1.5"
+        /><br />
+        Y:
+        <input
+          type="range"
+          id="light-y"
+          min="-10"
+          max="10"
+          step="0.5"
+          value="2.0"
+        /><br />
+        Z:
+        <input
+          type="range"
+          id="light-z"
+          min="-10"
+          max="10"
+          step="0.5"
+          value="4.0"
+        /><br />
+        <hr />
+        <strong>Warna Cahaya</strong><br />
+        Ambient: <input type="color" id="light-ambient" value="#202020" /><br />
+        Diffuse: <input type="color" id="light-diffuse" value="#ffffff" /><br />
+        Specular:
+        <input type="color" id="light-specular" value="#ffffff" /><br />
+        <hr />
+        <strong>Material</strong><br />
+        Shininess:
+        <input
+          type="range"
+          id="shininess"
+          min="1"
+          max="200"
+          step="1"
+          value="100"
+        />
+        <hr />
+        <strong>Warna Frame</strong><br />
+        Pilih Warna: <input type="color" id="frame-color" value="#c2c2c2" /><br />
+        <button id="frame-rgb-toggle">🌈 Mode: Warna Statis</button>
+      </div>
+
+      <div class="card" id="texture-controls">
+        <h3>Kontrol Tekstur</h3>
+        <strong>Pilih Tekstur Papan:</strong><br>
+        <select id="texture-select">
+          <option value="text">Teks "aku ❤️ grafkom"</option>
+          <option value="checkerboard">Papan Catur</option>
+          <option value="image">Gambar Simba</option>
+        </select>
+        <hr>
+        <strong>Interaksi Cahaya & Tekstur:</strong><br>
+        <select id="texture-mode">
+          <option value="0">Modulate (Cahaya * Tekstur)</option>
+          <option value="1">Decal (Tekstur Saja)</option>
+        </select>
+      </div>
+
+      <div class="card" id="photo-container">
+        <h3>Foto Referensi</h3>
+        <img src="papan-tulis-depan.jpg" alt="Papan Tulis Depan" />
+        <img src="papan-tulis-belakang.jpg" alt="Papan Tulis Belakang" />
+      </div>
+    </main>
+
+    <!-- Shaders -->
+    <script id="vertex-shader" type="x-shader/x-vertex">
+      #version 300 es
+      in vec4 aPosition;
+      in vec3 aNormal;
+      in vec4 aColor; // Warna material dari buffer
+      in vec2 aTexCoord; // Koordinat tekstur
+
+      // Matriks
+      uniform mat4 uModelViewMatrix;
+      uniform mat4 uProjectionMatrix;
+      uniform mat3 uNormalMatrix;
+
+      // Properti cahaya
+      uniform vec4 uLightPosition;
+
+      // Vektor yang akan diinterpolasi
+      out vec3 vNormal;
+      out vec3 vLight;
+      out vec3 vEye;
+      out vec4 vMaterialColor; // Teruskan warna material ke fragment shader
+      out vec2 vTexCoord; // Teruskan koordinat tekstur
+
+      void main() {
+          vec3 pos = (uModelViewMatrix * aPosition).xyz;
+
+          vec3 light;
+          if (uLightPosition.w == 0.0) {
+            light = normalize(uLightPosition.xyz);
+          } else {
+            light = normalize(uLightPosition.xyz - pos);
+          }
+
+          vec3 eye = -normalize(pos);
+          vec3 normal = normalize(uNormalMatrix * aNormal);
+
+          vNormal = normal;
+          vLight = light;
+          vEye = eye;
+          vMaterialColor = aColor; // Teruskan
+          vTexCoord = aTexCoord; // Teruskan
+
+          gl_Position = uProjectionMatrix * uModelViewMatrix * aPosition;
+      }
+    </script>
+
+    <script id="fragment-shader" type="x-shader/x-fragment">
+      #version 300 es
+      precision mediump float;
+
+      // Data dari vertex shader
+      in vec3 vNormal;
+      in vec3 vLight;
+      in vec3 vEye;
+      in vec4 vMaterialColor; // Terima warna material
+      in vec2 vTexCoord; // Terima koordinat tekstur
+
+      // Properti cahaya (bukan lagi produk)
+      uniform vec4 uLightAmbient;
+      uniform vec4 uLightDiffuse;
+      uniform vec4 uLightSpecular;
+      uniform float uShininess;
+
+      // Sampler untuk tekstur
+      uniform sampler2D uSampler;
+      uniform int uTextureMode;
+
+      out vec4 fColor;
+
+      void main() {
+          vec3 N = normalize(vNormal);
+          vec3 L = normalize(vLight);
+          vec3 E = normalize(vEye);
+          vec3 H = normalize(L + E);
+
+          // Ambil warna dari tekstur
+          vec4 texColor = texture(uSampler, vTexCoord);
+
+          // Tentukan properti material dari warna yang diterima
+          vec4 materialAmbient = vMaterialColor;
+          vec4 materialDiffuse;
+
+          if (uTextureMode == 1) { // Decal
+              materialDiffuse = texColor;
+          } else { // Modulate (default)
+              materialDiffuse = vMaterialColor * texColor;
+          }
+
+          // Biarkan specular material berwarna putih agar bisa memantulkan warna specular cahaya
+          vec4 materialSpecular = vec4(1.0, 1.0, 1.0, 1.0);
+
+          // Hitung produk pencahayaan di sini
+          vec4 ambient = uLightAmbient * materialAmbient;
+
+          float kd = max(dot(L, N), 0.0);
+          vec4 diffuse = kd * uLightDiffuse * materialDiffuse;
+
+          float ks = pow(max(dot(N, H), 0.0), uShininess);
+          vec4 specular = ks * uLightSpecular * materialSpecular;
+
+          if (dot(L, N) < 0.0) {
+            specular = vec4(0.0, 0.0, 0.0, 1.0);
+          }
+
+          fColor = ambient + diffuse + specular;
+          fColor.a = 1.0;
+      }
+    </script>
+
+    <script src="initShaders.js"></script>
+    <script src="MVnew.js"></script>
+    <script src="shadedWhiteboard.js"></script>
+  </body>
+</html>
