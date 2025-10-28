@@ -97,15 +97,38 @@
   color: #555;
   font-style: italic;
 }
+#group-info {
+        text-align: center;
+      }
+      #group-info h3 {
+        margin-bottom: 10px;
+        color: #0077b6;
+      }
+      #group-info ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      #group-info li {
+        margin-bottom: 5px;
+        font-size: 14px;
+      }
     </style>
   </head>
   <body>
     <header>
-      <h1>Objek Papan Tulis 3D (Phong Shading)</h1>
-      <p>Gunakan mouse, keyboard, atau tombol di bawah untuk berinteraksi</p>
+      <h1>Tugas 2: Animasi Objek ITS</h1>
+      <p>Implementasi Lighting, Texture, dan Hierarchical Modelling dengan WebGL</p>
     </header>
 
     <main>
+      <div class="card" id="group-info">
+        <h3>Anggota Kelompok</h3>
+        <ul>
+          <li>Felda Ega Fadhila (NRP: 5025231199)</li>
+          <li>Naswan Nashir Ramadhan (NRP: 5025231246)</li>
+        </ul>
+      </div>
       <div class="card">
         <canvas id="gl-canvas" width="700" height="500">
           Browser Anda tidak mendukung HTML5 canvas.
