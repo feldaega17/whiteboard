@@ -198,6 +198,13 @@
         </select>
       </div>
 
+      <div class="card" id="animation-controls">
+        <h3>Kontrol Animasi</h3>
+        <button id="draw-animation-toggle">✏️ Mulai Animasi Menggambar</button>
+        <button id="clear-board-button">✨ Bersihkan Papan</button>
+        <button id="erase-animation-toggle">🧽 Mulai Animasi Menghapus</button>
+      </div>
+
       <div class="card" id="photo-container">
         <h3>Foto Referensi</h3>
         <img src="papan-tulis-depan.jpg" alt="Papan Tulis Depan" />
@@ -271,6 +278,7 @@
 
       // Sampler untuk tekstur
       uniform sampler2D uSampler;
+      uniform sampler2D uDrawingSampler; // Tekstur untuk gambar
       uniform int uTextureMode;
 
       out vec4 fColor;
@@ -283,16 +291,22 @@
 
           // Ambil warna dari tekstur
           vec4 texColor = texture(uSampler, vTexCoord);
+          vec4 drawingColor = texture(uDrawingSampler, vTexCoord);
 
           // Tentukan properti material dari warna yang diterima
           vec4 materialAmbient = vMaterialColor;
           vec4 materialDiffuse;
 
           if (uTextureMode == 1) { // Decal
+              // Gunakan warna tekstur secara langsung
               materialDiffuse = texColor;
           } else { // Modulate (default)
+              // Kalikan warna material dengan warna tekstur
               materialDiffuse = vMaterialColor * texColor;
           }
+
+          // Aplikasikan gambar (tinta) di atas hasil sebelumnya.
+          materialDiffuse.rgb *= drawingColor.rgb;
 
           // Biarkan specular material berwarna putih agar bisa memantulkan warna specular cahaya
           vec4 materialSpecular = vec4(1.0, 1.0, 1.0, 1.0);
@@ -312,6 +326,30 @@
 
           fColor = ambient + diffuse + specular;
           fColor.a = 1.0;
+      }
+    </script>
+
+    <!-- Shaders untuk menggambar ke Framebuffer (FBO) -->
+    <script id="fbo-vertex-shader" type="x-shader/x-vertex">
+      #version 300 es
+      precision highp float;
+      in vec2 a_position;
+      uniform float u_pointSize;
+
+      void main() {
+          gl_Position = vec4(a_position, 0.0, 1.0);
+          gl_PointSize = u_pointSize;
+      }
+    </script>
+
+    <script id="fbo-fragment-shader" type="x-shader/x-fragment">
+      #version 300 es
+      precision highp float;
+      uniform vec4 u_color;
+      out vec4 fColor;
+
+      void main() {
+          fColor = u_color;
       }
     </script>
 

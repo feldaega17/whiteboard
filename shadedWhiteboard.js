@@ -8,11 +8,11 @@
  * - Fitur tekstur dinamis (generated, checkerboard, image).
  */
 
-let canvas, gl, program;
+let canvas, gl, program, fboProgram; // Program utama dan program untuk FBO
 let modelViewMatrix, projectionMatrix;
 
 // Buffer
-let cBuffer;
+let mainCBuffer, mainTBuffer, mainNBuffer, mainVBuffer, mainIBuffer;
 
 // Lokasi Uniform Matriks
 let modelViewMatrixLoc, projectionMatrixLoc, nMatrixLoc;
@@ -24,7 +24,8 @@ let uLightAmbientLoc,
   uLightPositionLoc,
   uShininessLoc,
   uSamplerLoc,
-  uTextureModeLoc;
+  uTextureModeLoc,
+  uDrawingSamplerLoc; // Sampler untuk tekstur gambar
 
 // Geometri gabungan
 let allVertices = [];
@@ -32,6 +33,20 @@ let allColors = []; // Digunakan sebagai warna material (diffuse)
 let allNormals = []; // Array untuk menyimpan normal
 let allTexCoords = []; // Array untuk menyimpan koordinat tekstur
 let allIndices = [];
+
+// --- Geometri & State Objek Terpisah (untuk animasi) ---
+let markerVertices = [],
+  markerNormals = [],
+  markerColors = [],
+  markerIndices = [];
+let eraserVertices = [],
+  eraserNormals = [],
+  eraserColors = [],
+  eraserIndices = [];
+let markerBuffers, eraserBuffers;
+let isDrawingAnimation = false;
+let isErasingAnimation = false;
+let animationTime = 0;
 
 // --- State Pencahayaan ---
 let lightPosition = vec4(1.5, 2.0, 4.0, 1.0);
@@ -41,6 +56,15 @@ let lightSpecular = vec4(1.0, 1.0, 1.0, 1.0);
 let materialShininess = 100.0;
 let isLightAutoMoving = false;
 let lightAnimationTime = 0;
+
+// --- State FBO untuk Menggambar ---
+let drawingFBO;
+let drawingTexture;
+const FBO_WIDTH = 1024,
+  FBO_HEIGHT = 512;
+let fboLocations; // Lokasi untuk shader FBO
+let fboPointBuffer;
+let fboSquareBuffer;
 
 // --- State Tekstur ---
 let textTexture, checkerboardTexture, imageTexture;
@@ -93,10 +117,38 @@ window.onload = function init() {
   gl.clearColor(0.4, 0.4, 0.4, 1.0);
   gl.enable(gl.DEPTH_TEST);
 
-  program = initShaders(gl, 'vertex-shader', 'fragment-shader');
+  // Inisialisasi dua program shader
+  program = initShaders(gl, "vertex-shader", "fragment-shader");
+  fboProgram = initShaders(gl, "fbo-vertex-shader", "fbo-fragment-shader");
   gl.useProgram(program);
 
   // Dapatkan lokasi semua uniform
+  getShaderLocations();
+
+  // Buat FBO dan tekstur untuk menggambar
+  initFBO();
+
+  // Buat semua tekstur
+  textTexture = createTextTexture();
+  checkerboardTexture = createCheckerboardTexture();
+  imageTexture = loadImageTexture('simba.jpeg');
+  currentTexture = textTexture; // Tekstur default
+
+  buildWhiteboard();
+  createMainBuffers();
+  setupEventListeners();
+
+  // Buat objek animasi terpisah
+  buildAnimatedObjects();
+
+  // Inisialisasi papan dengan membersihkannya
+  clearDrawing();
+
+  render();
+};
+
+function getShaderLocations() {
+  // Program utama (3D)
   modelViewMatrixLoc = gl.getUniformLocation(program, 'uModelViewMatrix');
   projectionMatrixLoc = gl.getUniformLocation(program, 'uProjectionMatrix');
   nMatrixLoc = gl.getUniformLocation(program, 'uNormalMatrix');
@@ -106,20 +158,33 @@ window.onload = function init() {
   uLightPositionLoc = gl.getUniformLocation(program, 'uLightPosition');
   uShininessLoc = gl.getUniformLocation(program, 'uShininess');
   uSamplerLoc = gl.getUniformLocation(program, 'uSampler');
+  uDrawingSamplerLoc = gl.getUniformLocation(program, 'uDrawingSampler');
   uTextureModeLoc = gl.getUniformLocation(program, 'uTextureMode');
 
-  // Buat semua tekstur
-  textTexture = createTextTexture();
-  checkerboardTexture = createCheckerboardTexture();
-  imageTexture = loadImageTexture('simba.jpeg');
-  currentTexture = textTexture; // Tekstur default
+  // Program FBO (2D)
+  fboLocations = {
+    position: gl.getAttribLocation(fboProgram, 'a_position'),
+    pointSize: gl.getUniformLocation(fboProgram, 'u_pointSize'),
+    color: gl.getUniformLocation(fboProgram, 'u_color'),
+  };
 
-  buildWhiteboard();
-  setupBuffers();
-  setupEventListeners();
+  // Buffer untuk menggambar titik (spidol)
+  fboPointBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, fboPointBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0]), gl.DYNAMIC_DRAW);
 
-  render();
-};
+  // Buffer untuk menggambar kotak (penghapus)
+  fboSquareBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, fboSquareBuffer);
+  const eraserSize = 0.15; // Ukuran kuas penghapus di ruang clip-space
+  const square = [
+    -eraserSize, -eraserSize,
+     eraserSize, -eraserSize,
+    -eraserSize,  eraserSize,
+     eraserSize,  eraserSize,
+  ];
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(square), gl.DYNAMIC_DRAW);
+}
 
 function createTextTexture() {
   const textCanvas = document.createElement('canvas');
@@ -199,6 +264,42 @@ function loadImageTexture(url) {
   return texture;
 }
 
+function initFBO() {
+  // 1. Buat Framebuffer
+  drawingFBO = gl.createFramebuffer();
+
+  // 2. Buat tekstur tujuan
+  drawingTexture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, drawingTexture);
+  // Alokasikan memori untuk tekstur, tapi jangan isi datanya dulu
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, FBO_WIDTH, FBO_HEIGHT, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+  // Atur parameter tekstur
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+  // 3. Kaitkan tekstur ke FBO
+  gl.bindFramebuffer(gl.FRAMEBUFFER, drawingFBO);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, drawingTexture, 0);
+
+  // 4. Periksa apakah FBO sudah lengkap
+  const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+  if (status !== gl.FRAMEBUFFER_COMPLETE) {
+    console.error('FBO tidak lengkap: ' + status.toString(16));
+    // Cari tahu error spesifik
+    if (status === gl.FRAMEBUFFER_UNSUPPORTED) {
+        console.error("Kombinasi format FBO tidak didukung oleh hardware ini.");
+    } else if (status === gl.FRAMEBUFFER_INCOMPLETE_ATTACHMENT) {
+        console.error("Attachment FBO tidak lengkap.");
+    } // ... tambahkan pengecekan lain jika perlu
+    return;
+  }
+
+  // 5. Lepaskan ikatan (unbind) FBO agar kita kembali menggambar ke canvas utama
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+
 function buildWhiteboard() {
   const materials = {
     boardFront: vec4(1.0, 1.0, 1.0, 1.0),
@@ -243,7 +344,7 @@ function buildWhiteboard() {
     boardH,
     boardD,
     materials.boardBack,
-    translate(0, 0, -0.02)
+    translate(0, 0, -0.02),
   );
 
   // Frame (catat indeksnya untuk perubahan warna)
@@ -349,6 +450,46 @@ function buildWhiteboard() {
   //   materials.wheels,
   //   mult(translate(standOffset, wheelYPos, wheelOffsetZ), wheelRotation)
   // );
+}
+
+// Function to build marker and eraser geometries and their separate buffers
+function buildAnimatedObjects() {
+  // --- SPIDOL ---
+  const markerRadius = 0.02;
+  const markerHeight = 0.25;
+  const markerColor = vec4(0.8, 0.1, 0.1, 1.0); // Merah
+
+  // Simpan data geometri spidol ke array terpisah
+  createCylinderSeparate(markerRadius, markerHeight, markerColor, markerVertices, markerNormals, markerColors, markerIndices);
+  markerBuffers = setupObjectBuffers(markerVertices, markerNormals, markerColors, markerIndices);
+
+  // --- PENGHAPUS ---
+  const eraserW = 0.2;
+  const eraserH = 0.1;
+  const eraserD = 0.08;
+  const eraserColor = vec4(0.2, 0.2, 0.5, 1.0); // Biru tua
+
+  // Simpan data geometri penghapus ke array terpisah
+  createPrismSeparate(eraserW, eraserH, eraserD, eraserColor, eraserVertices, eraserNormals, eraserColors, eraserIndices);
+  eraserBuffers = setupObjectBuffers(eraserVertices, eraserNormals, eraserColors, eraserIndices);
+}
+
+// Helper to create cylinder geometry into separate arrays
+function createCylinderSeparate(radius, height, color, outVertices, outNormals, outColors, outIndices) {
+  // Temporarily swap global arrays to populate separate arrays
+  const tempAllVertices = allVertices, tempAllNormals = allNormals, tempAllColors = allColors, tempAllIndices = allIndices;
+  allVertices = outVertices; allNormals = outNormals; allColors = outColors; allIndices = outIndices;
+  createCylinder(radius, height, color, mat4());
+  allVertices = tempAllVertices; allNormals = tempAllNormals; allColors = tempAllColors; allIndices = tempAllIndices;
+}
+
+// Helper to create prism geometry into separate arrays
+function createPrismSeparate(width, height, depth, color, outVertices, outNormals, outColors, outIndices) {
+  // Temporarily swap global arrays to populate separate arrays
+  const tempAllVertices = allVertices, tempAllNormals = allNormals, tempAllColors = allColors, tempAllIndices = allIndices;
+  allVertices = outVertices; allNormals = outNormals; allColors = outColors; allIndices = outIndices;
+  createPrism(width, height, depth, color, mat4());
+  allVertices = tempAllVertices; allNormals = tempAllNormals; allColors = tempAllColors; allIndices = tempAllIndices;
 }
 
 function createPrism(
@@ -608,47 +749,93 @@ function createCylinder(radius, height, color, transformMatrix = mat4()) {
   }
 }
 
-function setupBuffers() {
+// Function to create and populate the main buffers (for whiteboard and stand) once
+function createMainBuffers() {
   // Buffer Warna Material
-  cBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, cBuffer);
+  mainCBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, mainCBuffer);
   gl.bufferData(gl.ARRAY_BUFFER, flatten(allColors), gl.DYNAMIC_DRAW);
-  const aColor = gl.getAttribLocation(program, 'aColor');
-  gl.vertexAttribPointer(aColor, 4, gl.FLOAT, false, 0, 0);
-  gl.enableVertexAttribArray(aColor);
 
   // Buffer Koordinat Tekstur
-  const tBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, tBuffer);
+  mainTBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, mainTBuffer);
   gl.bufferData(gl.ARRAY_BUFFER, flatten(allTexCoords), gl.STATIC_DRAW);
-  const aTexCoord = gl.getAttribLocation(program, 'aTexCoord');
-  gl.vertexAttribPointer(aTexCoord, 2, gl.FLOAT, false, 0, 0);
-  gl.enableVertexAttribArray(aTexCoord);
 
   // Buffer Normal
-  const nBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, nBuffer);
+  mainNBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, mainNBuffer);
   gl.bufferData(gl.ARRAY_BUFFER, flatten(allNormals), gl.STATIC_DRAW);
-  const aNormal = gl.getAttribLocation(program, 'aNormal');
-  gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, 0, 0);
-  gl.enableVertexAttribArray(aNormal);
 
   // Buffer Posisi
-  const vBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
+  mainVBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, mainVBuffer);
   gl.bufferData(gl.ARRAY_BUFFER, flatten(allVertices), gl.STATIC_DRAW);
-  const aPosition = gl.getAttribLocation(program, 'aPosition');
-  gl.vertexAttribPointer(aPosition, 3, gl.FLOAT, false, 0, 0);
-  gl.enableVertexAttribArray(aPosition);
 
   // Buffer Indeks
-  const iBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, iBuffer);
+  mainIBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mainIBuffer);
   gl.bufferData(
     gl.ELEMENT_ARRAY_BUFFER,
     new Uint16Array(allIndices),
     gl.STATIC_DRAW
   );
+}
+
+function setupObjectBuffers(vertices, normals, colors, indices) {
+    const aColor = gl.getAttribLocation(program, 'aColor');
+    const aNormal = gl.getAttribLocation(program, 'aNormal');
+    const aPosition = gl.getAttribLocation(program, 'aPosition');
+
+    const cBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, cBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, flatten(colors), gl.STATIC_DRAW);
+
+    const nBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, nBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, flatten(normals), gl.STATIC_DRAW);
+
+    const vBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, flatten(vertices), gl.STATIC_DRAW);
+
+    const iBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, iBuffer);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+
+    return {
+        cBuffer,
+        nBuffer,
+        vBuffer,
+        iBuffer,
+        numIndices: indices.length,
+        attribs: {
+            aColor, aNormal, aPosition
+        }
+    };
+}
+
+function bindMainBuffersAndEnableAttributes() {
+  const aColor = gl.getAttribLocation(program, 'aColor');
+  gl.bindBuffer(gl.ARRAY_BUFFER, mainCBuffer);
+  gl.vertexAttribPointer(aColor, 4, gl.FLOAT, false, 0, 0); // Use mainCBuffer
+  gl.enableVertexAttribArray(aColor);
+
+  const aTexCoord = gl.getAttribLocation(program, 'aTexCoord');
+  gl.bindBuffer(gl.ARRAY_BUFFER, mainTBuffer);
+  gl.vertexAttribPointer(aTexCoord, 2, gl.FLOAT, false, 0, 0); // Use mainTBuffer
+  gl.enableVertexAttribArray(aTexCoord);
+
+  const aNormal = gl.getAttribLocation(program, 'aNormal');
+  gl.bindBuffer(gl.ARRAY_BUFFER, mainNBuffer);
+  gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, 0, 0); // Use mainNBuffer
+  gl.enableVertexAttribArray(aNormal);
+
+  const aPosition = gl.getAttribLocation(program, 'aPosition');
+  gl.bindBuffer(gl.ARRAY_BUFFER, mainVBuffer);
+  gl.vertexAttribPointer(aPosition, 3, gl.FLOAT, false, 0, 0); // Use mainVBuffer
+  gl.enableVertexAttribArray(aPosition);
+
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mainIBuffer); // Use mainIBuffer
 }
 
 function hexToVec4(hex) {
@@ -671,7 +858,7 @@ function updateFrameColor(color) {
   for (let i = 0; i < frameVertexCount; i++) {
     allColors[frameVertexStartIndex + i] = color;
   }
-  gl.bindBuffer(gl.ARRAY_BUFFER, cBuffer);
+  gl.bindBuffer(gl.ARRAY_BUFFER, mainCBuffer); // Use mainCBuffer
   gl.bufferSubData(
     gl.ARRAY_BUFFER,
     frameVertexStartIndex * 16, // 16 bytes per vec4 (4 floats * 4 bytes)
@@ -746,6 +933,32 @@ function setupEventListeners() {
     textureMode = parseInt(e.target.value);
   };
 
+  // Kontrol Animasi
+  document.getElementById('draw-animation-toggle').onclick = () => {
+      isDrawingAnimation = !isDrawingAnimation;
+      isErasingAnimation = false; // Matikan animasi lain
+      animationTime = 0; // Reset waktu
+      document.getElementById('draw-animation-toggle').innerText = isDrawingAnimation ? '✏️ Hentikan Animasi' : '✏️ Mulai Animasi Menggambar';
+      document.getElementById('erase-animation-toggle').innerText = '🧽 Mulai Animasi Menghapus';
+  };
+
+  document.getElementById('erase-animation-toggle').onclick = () => {
+      isErasingAnimation = !isErasingAnimation;
+      isDrawingAnimation = false; // Matikan animasi lain
+      animationTime = 0; // Reset waktu
+      document.getElementById('erase-animation-toggle').innerText = isErasingAnimation ? '🧽 Hentikan Animasi' : '🧽 Mulai Animasi Menghapus';
+      document.getElementById('draw-animation-toggle').innerText = '✏️ Mulai Animasi Menggambar';
+  };
+
+  document.getElementById('clear-board-button').onclick = clearDrawing;
+
+  const stopAnimations = () => {
+      isDrawingAnimation = false;
+      isErasingAnimation = false;
+      document.getElementById('draw-animation-toggle').innerText = '✏️ Mulai Animasi Menggambar';
+      document.getElementById('erase-animation-toggle').innerText = '🧽 Mulai Animasi Menghapus';
+  }
+
   canvas.onmousedown = (e) => {
     if (isAutoRotating) {
       isAutoRotating = false;
@@ -755,6 +968,7 @@ function setupEventListeners() {
     mouseDown = true;
     lastMouseX = e.clientX;
     lastMouseY = e.clientY;
+    stopAnimations();
   };
   canvas.onmouseup = () => (mouseDown = false);
   canvas.onmouseleave = () => (mouseDown = false);
@@ -789,6 +1003,7 @@ function setupEventListeners() {
       document.getElementById('auto-rotate-toggle').innerText =
         '▶️ Mulai Rotasi Otomatis';
     }
+    stopAnimations();
     const k = e.key.toLowerCase();
     const key = e.key;
     if (key === '+' || key === '=')
@@ -887,6 +1102,14 @@ function setupEventListeners() {
     document.getElementById('texture-mode').value = '0';
     currentTexture = textTexture;
     textureMode = 0;
+
+    // Reset Animasi
+    stopAnimations();
+
+    // Bersihkan papan
+    clearDrawing();
+
+
   };
 
   document.getElementById('board-rotation-toggle').onclick = () => {
@@ -924,8 +1147,122 @@ function setupEventListeners() {
     (scaleFactors.y = parseFloat(e.target.value));
 }
 
+function drawObject(buffers, modelMatrix) {
+    const { cBuffer, nBuffer, vBuffer, iBuffer, numIndices, attribs } = buffers;
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, cBuffer);
+    gl.vertexAttribPointer(attribs.aColor, 4, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(attribs.aColor); // Enable attribute for this object
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, nBuffer);
+    gl.vertexAttribPointer(attribs.aNormal, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(attribs.aNormal); // Enable attribute for this object
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
+    gl.vertexAttribPointer(attribs.aPosition, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(attribs.aPosition); // Enable attribute for this object
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, iBuffer);
+    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(modelMatrix));
+    gl.drawElements(gl.TRIANGLES, numIndices, gl.UNSIGNED_SHORT, 0);
+}
+
+function drawOnBoard(x, y, isErasing) {
+  // 1. Bind FBO untuk menggambar ke tekstur
+  gl.bindFramebuffer(gl.FRAMEBUFFER, drawingFBO);
+  gl.viewport(0, 0, FBO_WIDTH, FBO_HEIGHT);
+
+  // 2. Gunakan program shader 2D
+  gl.useProgram(fboProgram);
+
+  // 3. Atur atribut dan uniform
+  gl.enableVertexAttribArray(fboLocations.position);
+
+  if (isErasing) {
+    // Gambar kotak putih besar untuk menghapus
+    gl.bindBuffer(gl.ARRAY_BUFFER, fboSquareBuffer);
+    gl.vertexAttribPointer(fboLocations.position, 2, gl.FLOAT, false, 0, 0);
+    // Pindahkan kotak ke posisi kursor
+    const translatedSquare = new Float32Array([
+      -0.15 + x, -0.15 + y,
+       0.15 + x, -0.15 + y,
+      -0.15 + x,  0.15 + y,
+       0.15 + x,  0.15 + y,
+    ]);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, translatedSquare);
+    gl.uniform4fv(fboLocations.color, flatten(vec4(1, 1, 1, 1))); // Warna putih
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  } else {
+    // Gambar titik hitam untuk menggambar
+    gl.bindBuffer(gl.ARRAY_BUFFER, fboPointBuffer);
+    gl.vertexAttribPointer(fboLocations.position, 2, gl.FLOAT, false, 0, 0);
+    // Pindahkan titik ke posisi kursor
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, new Float32Array([x, y]));
+    gl.uniform1f(fboLocations.pointSize, 10.0); // Ukuran kuas
+    gl.uniform4fv(fboLocations.color, flatten(vec4(0, 0, 0, 1))); // Warna hitam
+    gl.drawArrays(gl.POINTS, 0, 1);
+  }
+
+  // 4. Unbind FBO dan kembalikan ke program utama
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.useProgram(program);
+  gl.viewport(0, 0, canvas.width, canvas.height); // Kembalikan viewport
+}
+
+function clearDrawing() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, drawingFBO);
+  gl.clearColor(1.0, 1.0, 1.0, 1.0); // Warna putih
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  // Unbind FBO
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  // Kembalikan warna clear default untuk canvas utama
+  gl.clearColor(0.4, 0.4, 0.4, 1.0);
+}
+
 function render() {
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  // Update waktu animasi
+  if (isDrawingAnimation || isErasingAnimation) {
+    animationTime += 0.015; // Sedikit dipercepat
+    if (isDrawingAnimation && animationTime > 3) animationTime = 0; // Durasi animasi gambar 3 detik
+    if (isErasingAnimation && animationTime > 2) animationTime = 0; // Durasi animasi hapus 2 detik
+
+    let animX3D, animY3D;
+
+    if (isDrawingAnimation) {
+      // Animasi menggambar segitiga
+      const p1 = vec2(-0.4, -0.3);
+      const p2 = vec2(0.4, -0.3);
+      const p3 = vec2(0.0, 0.4);
+
+      if (animationTime < 1.0) { // Sisi 1: P1 -> P2
+        const t = animationTime;
+        const pos = mix(p1, p2, t);
+        animX3D = pos[0];
+        animY3D = pos[1];
+      } else if (animationTime < 2.0) { // Sisi 2: P2 -> P3
+        const t = animationTime - 1.0;
+        const pos = mix(p2, p3, t);
+        animX3D = pos[0];
+        animY3D = pos[1];
+      } else { // Sisi 3: P3 -> P1
+        const t = animationTime - 2.0;
+        const pos = mix(p3, p1, t);
+        animX3D = pos[0];
+        animY3D = pos[1];
+      }
+    } else { // isErasingAnimation
+      animX3D = -0.6 + 1.2 * (animationTime / 2);
+      animY3D = 0.2 * Math.sin(animationTime * Math.PI * 4);
+    }
+
+    const texX = (animX3D + 0.75) / 1.5;
+    const texY = (animY3D + 0.5) / 1.0;
+
+    // Gambar ke FBO
+    drawOnBoard(texX * 2 - 1, texY * 2 - 1, isErasingAnimation); // Konversi ke clip space [-1, 1]
+  }
 
   if (isAutoRotating) {
     rotationAngles.y = (rotationAngles.y + AUTO_ROT_SPEED_Y) % 360;
@@ -1006,11 +1343,20 @@ function render() {
   gl.uniform4fv(uLightSpecularLoc, flatten(lightSpecular));
   gl.uniform1f(uShininessLoc, materialShininess);
 
-  // Kirim uniform dan bind tekstur yang aktif
-  gl.uniform1i(uTextureModeLoc, textureMode);
+  bindMainBuffersAndEnableAttributes();
+
+  // Bind tekstur ke unit yang berbeda
+  // Unit 0: Tekstur dasar (teks, simba, dll)
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, currentTexture);
   gl.uniform1i(uSamplerLoc, 0);
+
+  // Unit 1: Tekstur gambar dinamis dari FBO
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, drawingTexture);
+  gl.uniform1i(uDrawingSamplerLoc, 1);
+
+  gl.uniform1i(uTextureModeLoc, textureMode);
 
   // Gambar Papan
   const boardRotationMatrix = rotateX(boardOnlyRotationAngle);
@@ -1031,6 +1377,66 @@ function render() {
     gl.UNSIGNED_SHORT,
     boardIndicesCount * 2
   );
+
+  // --- Gambar Objek Animasi (Spidol & Penghapus) ---
+  // Matriks ini akan menempatkan objek di atas papan dan membuatnya ikut berputar dengan papan
+  const boardObjectBaseMatrix = mult(baseMatrix, boardRotationMatrix);
+
+  // Posisi istirahat di atas tatakan bawah
+  const trayY = -0.55;
+  const trayZ = 0.05;
+
+  // --- Spidol ---
+  let markerMatrix;
+  if (isDrawingAnimation) {
+      // Animasi: bergerak horizontal di tengah papan
+      let animX, animY;
+      const p1 = vec2(-0.4, -0.3);
+      const p2 = vec2(0.4, -0.3);
+      const p3 = vec2(0.0, 0.4);
+
+      if (animationTime < 1.0) {
+        const pos = mix(p1, p2, animationTime);
+        [animX, animY] = pos;
+      } else if (animationTime < 2.0) {
+        const pos = mix(p2, p3, animationTime - 1.0);
+        [animX, animY] = pos;
+      } else {
+        const pos = mix(p3, p1, animationTime - 2.0);
+        [animX, animY] = pos;
+      }
+
+      const animZ = 0.02; // Sedikit di depan papan
+      markerMatrix = mult(boardObjectBaseMatrix, translate(animX, animY, animZ));
+      markerMatrix = mult(markerMatrix, rotateZ(90)); // Tidurkan spidol
+  } else {
+      // Posisi istirahat
+      markerMatrix = mult(boardObjectBaseMatrix, translate(-0.3, trayY + 0.02, trayZ));
+  }
+  modelViewMatrix = markerMatrix;
+  nMatrix = normalMatrix(modelViewMatrix, true);
+  gl.uniformMatrix3fv(nMatrixLoc, false, flatten(nMatrix));
+  drawObject(markerBuffers, modelViewMatrix);
+
+  // --- Penghapus ---
+  let eraserMatrix;
+  if (isErasingAnimation) {
+      // Animasi: bergerak zig-zag
+      const animX = -0.6 + 1.2 * (animationTime / 2);
+      const animY = 0.2 * Math.sin(animationTime * Math.PI * 4); // Gerak naik-turun
+      const animZ = 0.02;
+      eraserMatrix = mult(boardObjectBaseMatrix, translate(animX, animY, animZ));
+  } else {
+      // Posisi istirahat
+      eraserMatrix = mult(boardObjectBaseMatrix, translate(0.3, trayY + 0.05, trayZ));
+  }
+  modelViewMatrix = eraserMatrix;
+  nMatrix = normalMatrix(modelViewMatrix, true);
+  gl.uniformMatrix3fv(nMatrixLoc, false, flatten(nMatrix));
+  drawObject(eraserBuffers, modelViewMatrix);
+
+  // Kembalikan buffer utama untuk gambar berikutnya
+  bindMainBuffersAndEnableAttributes();
 
   requestAnimationFrame(render);
 }
