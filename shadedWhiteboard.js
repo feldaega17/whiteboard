@@ -315,30 +315,61 @@ function buildWhiteboard() {
 }
 
 function buildAnimatedObjects() {
-  const markerColor = vec4(0.8, 0.1, 0.1, 1.0);
-  createCylinderSeparate(0.02, 0.25, markerColor, markerVertices, markerNormals, markerColors, markerIndices);
+  // --- Spidol (Marker) ---
+  const markerBodyColor = vec4(0.8, 0.1, 0.1, 1.0); // Merah untuk badan
+  const markerCapColor = vec4(0.2, 0.2, 0.2, 1.0); // Abu-abu gelap untuk tutup
+  const markerTipColor = vec4(0.0, 0.0, 0.0, 1.0); // Hitam untuk ujung
+  const markerRingColor = vec4(0.9, 0.9, 0.9, 1.0); // Cincin perak
+
+  markerVertices = []; markerNormals = []; markerColors = []; markerIndices = [];
+
+  // Badan spidol utama
+  _createCylinderPart(0.02, 0.2, markerBodyColor, translate(0, 0.025, 0), markerVertices, markerNormals, markerColors, markerIndices);
+  // Tutup spidol (sedikit lebih lebar dan pendek)
+  _createCylinderPart(0.025, 0.05, markerCapColor, translate(0, 0.125, 0), markerVertices, markerNormals, markerColors, markerIndices);
+  // Cincin antara badan dan tutup
+  _createCylinderPart(0.022, 0.01, markerRingColor, translate(0, 0.09, 0), markerVertices, markerNormals, markerColors, markerIndices);
+  // Ujung spidol (kerucut/silinder kecil)
+  _createCylinderPart(0.01, 0.02, markerTipColor, translate(0, -0.085, 0), markerVertices, markerNormals, markerColors, markerIndices);
+
   markerBuffers = setupObjectBuffers(markerVertices, markerNormals, markerColors, markerIndices);
 
-  const eraserColor = vec4(0.2, 0.2, 0.5, 1.0);
-  createPrismSeparate(0.2, 0.1, 0.08, eraserColor, eraserVertices, eraserNormals, eraserColors, eraserIndices);
+  // --- Penghapus (Eraser) ---
+  const eraserBodyColor = vec4(0.2, 0.2, 0.5, 1.0); // Biru untuk badan
+  const eraserFeltColor = vec4(0.1, 0.1, 0.1, 1.0); // Abu-abu gelap untuk alas felt
+  const eraserHandleColor = vec4(0.7, 0.7, 0.7, 1.0); // Abu-abu terang untuk pegangan
+
+  eraserVertices = []; eraserNormals = []; eraserColors = []; eraserIndices = [];
+
+  // Badan penghapus utama
+  _createPrismPart(0.2, 0.06, 0.08, eraserBodyColor, translate(0, 0.02, 0), eraserVertices, eraserNormals, eraserColors, eraserIndices);
+  // Pegangan penghapus (prism lebih kecil di atas)
+  _createPrismPart(0.15, 0.02, 0.06, eraserHandleColor, translate(0, 0.05, 0), eraserVertices, eraserNormals, eraserColors, eraserIndices);
+  // Alas felt (prism tipis di bawah)
+  _createPrismPart(0.18, 0.02, 0.07, eraserFeltColor, translate(0, -0.03, 0), eraserVertices, eraserNormals, eraserColors, eraserIndices);
+
   eraserBuffers = setupObjectBuffers(eraserVertices, eraserNormals, eraserColors, eraserIndices);
 
+  // --- Roda (Wheels) ---
   const wheelColor = vec4(0.3, 0.3, 0.3, 1.0);
-  createCylinderSeparate(0.05, 0.03, wheelColor, wheelVertices, wheelNormals, wheelColors, wheelIndices);
+  wheelVertices = []; wheelNormals = []; wheelColors = []; wheelIndices = [];
+  _createCylinderPart(0.05, 0.03, wheelColor, mat4(), wheelVertices, wheelNormals, wheelColors, wheelIndices);
   wheelBuffers = setupObjectBuffers(wheelVertices, wheelNormals, wheelColors, wheelIndices);
 }
 
-function createCylinderSeparate(radius, height, color, outVertices, outNormals, outColors, outIndices) {
+// Helper function untuk membuat bagian silinder dan menambahkannya ke array spesifik
+function _createCylinderPart(radius, height, color, transformMatrix, outVertices, outNormals, outColors, outIndices) {
   const tempAllVertices = allVertices, tempAllNormals = allNormals, tempAllColors = allColors, tempAllIndices = allIndices, tempAllTexCoords = allTexCoords;
   allVertices = outVertices; allNormals = outNormals; allColors = outColors; allIndices = outIndices; allTexCoords = [];
-  createCylinder(radius, height, color, mat4());
+  createCylinder(radius, height, color, transformMatrix); // Meneruskan matriks transformasi
   allVertices = tempAllVertices; allNormals = tempAllNormals; allColors = tempAllColors; allIndices = tempAllIndices; allTexCoords = tempAllTexCoords;
 }
 
-function createPrismSeparate(width, height, depth, color, outVertices, outNormals, outColors, outIndices) {
+// Helper function untuk membuat bagian prisma dan menambahkannya ke array spesifik
+function _createPrismPart(width, height, depth, color, transformMatrix, outVertices, outNormals, outColors, outIndices) {
   const tempAllVertices = allVertices, tempAllNormals = allNormals, tempAllColors = allColors, tempAllIndices = allIndices, tempAllTexCoords = allTexCoords;
   allVertices = outVertices; allNormals = outNormals; allColors = outColors; allIndices = outIndices; allTexCoords = [];
-  createPrism(width, height, depth, color, mat4());
+  createPrism(width, height, depth, color, transformMatrix); // Meneruskan matriks transformasi
   allVertices = tempAllVertices; allNormals = tempAllNormals; allColors = tempAllColors; allIndices = tempAllIndices; allTexCoords = tempAllTexCoords;
 }
 
@@ -955,8 +986,10 @@ function render() {
       else if (animT < 2) { const pos=mix(p2,p3,animT-1); animX=pos[0]; animY=pos[1]; }
       else { const pos=mix(p3,p1,animT-2); animX=pos[0]; animY=pos[1]; }
       const animZ = 0.02;
+      // Pindahkan spidol ke posisi di papan
       markerMatrix = mult(boardObjectBaseMatrix, translate(animX, animY, animZ));
-      markerMatrix = mult(markerMatrix, rotateZ(90));
+      // Putar spidol 90 derajat pada sumbu X agar ujungnya menunjuk ke papan
+      markerMatrix = mult(markerMatrix, rotateX(90));
   } else {
       markerMatrix = mult(boardObjectBaseMatrix, translate(-0.3, trayY + 0.02, trayZ));
   }
