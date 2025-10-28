@@ -113,6 +113,24 @@
         margin-bottom: 5px;
         font-size: 14px;
       }
+
+      /* Styling untuk Pohon Hierarki */
+      #hierarchy-tree {
+        text-align: left;
+      }
+      #hierarchy-tree h3 {
+        text-align: center;
+      }
+      #hierarchy-tree ul {
+        list-style-type: none;
+        padding-left: 20px;
+      }
+      #hierarchy-tree li {
+        margin: 5px 0;
+        padding: 5px;
+        border-left: 2px solid #0077b6;
+        background-color: #f0f8ff;
+      }
     </style>
   </head>
   <body>
@@ -245,6 +263,8 @@
         <button id="draw-animation-toggle">✏️ Mulai Animasi Menggambar</button>
         <button id="clear-board-button">✨ Bersihkan Papan</button>
         <button id="erase-animation-toggle">🧽 Mulai Animasi Menghapus</button>
+        <hr />
+        <button id="showcase-animation-toggle">▶️ Mulai Animasi Showcase</button>
       </div>
 
       <div class="card" id="photo-container">
@@ -430,6 +450,13 @@
           fColor = u_color;
       }
     </script>
+
+    <script src="initShaders.js"></script>
+    <script src="MVnew.js"></script>
+    <script src="shadedWhiteboard.js"></script>
+  </body>
+</html>
+script>
 
     <script src="initShaders.js"></script>
     <script src="MVnew.js"></script>
