@@ -48,7 +48,7 @@ let wheelVertices = [],
   wheelColors = [],
   wheelIndices = [];
 
-let markerBuffers, eraserBuffers, wheelBuffers;
+let markerBuffers, eraserBuffers, wheelBuffers, platformBuffers;
 let isDrawingAnimation = false;
 let isErasingAnimation = false;
 let animationTime = 0;
@@ -112,6 +112,7 @@ let zoomFactor = 1.0;
 const ZOOM_STEP = 0.1;
 const ZOOM_MIN = 0.2;
 const ZOOM_MAX = 6.0;
+const WHEEL_ROLL_FACTOR = 229; // Derajat per unit translasi Z (sekitar 20% kecepatan fisik untuk radius 0.05)
 const AUTO_ROT_SPEED_Y = 0.3;
 const AUTO_ROT_SPEED_BOARD = 0.18;
 
@@ -315,96 +316,146 @@ function buildWhiteboard() {
 }
 
 function buildAnimatedObjects() {
-  const markerColor = vec4(0.8, 0.1, 0.1, 1.0);
-  createCylinderSeparate(0.02, 0.25, markerColor, markerVertices, markerNormals, markerColors, markerIndices);
+  // --- Spidol (Marker) ---
+  const markerBodyColor = vec4(0.8, 0.1, 0.1, 1.0); // Merah untuk badan
+  const markerCapColor = vec4(0.2, 0.2, 0.2, 1.0); // Abu-abu gelap untuk tutup
+  const markerTipColor = vec4(0.0, 0.0, 0.0, 1.0); // Hitam untuk ujung
+  const markerRingColor = vec4(0.9, 0.9, 0.9, 1.0); // Cincin perak
+
+  markerVertices = []; markerNormals = []; markerColors = []; markerIndices = [];
+
+  // Badan spidol utama
+  _createCylinderPart(0.02, 0.2, markerBodyColor, translate(0, 0.025, 0), markerVertices, markerNormals, markerColors, markerIndices);
+  // Tutup spidol (sedikit lebih lebar dan pendek)
+  _createCylinderPart(0.025, 0.05, markerCapColor, translate(0, 0.125, 0), markerVertices, markerNormals, markerColors, markerIndices);
+  // Cincin antara badan dan tutup
+  _createCylinderPart(0.022, 0.01, markerRingColor, translate(0, 0.09, 0), markerVertices, markerNormals, markerColors, markerIndices);
+  // Ujung spidol (kerucut/silinder kecil)
+  _createCylinderPart(0.01, 0.02, markerTipColor, translate(0, -0.085, 0), markerVertices, markerNormals, markerColors, markerIndices);
+
   markerBuffers = setupObjectBuffers(markerVertices, markerNormals, markerColors, markerIndices);
 
-  const eraserColor = vec4(0.2, 0.2, 0.5, 1.0);
-  createPrismSeparate(0.2, 0.1, 0.08, eraserColor, eraserVertices, eraserNormals, eraserColors, eraserIndices);
+  // --- Penghapus (Eraser) ---
+  const eraserBodyColor = vec4(0.2, 0.2, 0.5, 1.0); // Biru untuk badan
+  const eraserFeltColor = vec4(0.1, 0.1, 0.1, 1.0); // Abu-abu gelap untuk alas felt
+  const eraserHandleColor = vec4(0.7, 0.7, 0.7, 1.0); // Abu-abu terang untuk pegangan
+
+  eraserVertices = []; eraserNormals = []; eraserColors = []; eraserIndices = [];
+
+  // Badan penghapus utama
+  _createPrismPart(0.2, 0.06, 0.08, eraserBodyColor, translate(0, 0.02, 0), eraserVertices, eraserNormals, eraserColors, eraserIndices);
+  // Pegangan penghapus (prism lebih kecil di atas)
+  _createPrismPart(0.15, 0.02, 0.06, eraserHandleColor, translate(0, 0.05, 0), eraserVertices, eraserNormals, eraserColors, eraserIndices);
+  // Alas felt (prism tipis di bawah)
+  _createPrismPart(0.18, 0.02, 0.07, eraserFeltColor, translate(0, -0.03, 0), eraserVertices, eraserNormals, eraserColors, eraserIndices);
+
   eraserBuffers = setupObjectBuffers(eraserVertices, eraserNormals, eraserColors, eraserIndices);
 
+  // --- Roda (Wheels) ---
   const wheelColor = vec4(0.3, 0.3, 0.3, 1.0);
-  createCylinderSeparate(0.05, 0.03, wheelColor, wheelVertices, wheelNormals, wheelColors, wheelIndices);
+  wheelVertices = []; wheelNormals = []; wheelColors = []; wheelIndices = [];
+  _createCylinderPart(0.05, 0.03, wheelColor, mat4(), wheelVertices, wheelNormals, wheelColors, wheelIndices);
   wheelBuffers = setupObjectBuffers(wheelVertices, wheelNormals, wheelColors, wheelIndices);
 }
 
-function createCylinderSeparate(radius, height, color, outVertices, outNormals, outColors, outIndices) {
-  const temp = [allVertices, allNormals, allColors, allIndices, allTexCoords];
-  [allVertices, allNormals, allColors, allIndices, allTexCoords] = [outVertices, outNormals, outColors, outIndices, []];
-  createCylinder(radius, height, color, mat4());
-  [allVertices, allNormals, allColors, allIndices, allTexCoords] = temp;
+// Helper function untuk membuat bagian silinder dan menambahkannya ke array spesifik
+function _createCylinderPart(radius, height, color, transformMatrix, outVertices, outNormals, outColors, outIndices) {
+  const tempAllVertices = allVertices, tempAllNormals = allNormals, tempAllColors = allColors, tempAllIndices = allIndices, tempAllTexCoords = allTexCoords;
+  allVertices = outVertices; allNormals = outNormals; allColors = outColors; allIndices = outIndices; allTexCoords = [];
+  createCylinder(radius, height, color, transformMatrix); // Meneruskan matriks transformasi
+  allVertices = tempAllVertices; allNormals = tempAllNormals; allColors = tempAllColors; allIndices = tempAllIndices; allTexCoords = tempAllTexCoords;
 }
 
-function createPrismSeparate(width, height, depth, color, outVertices, outNormals, outColors, outIndices) {
-  const temp = [allVertices, allNormals, allColors, allIndices, allTexCoords];
-  [allVertices, allNormals, allColors, allIndices, allTexCoords] = [outVertices, outNormals, outColors, outIndices, []];
-  createPrism(width, height, depth, color, mat4());
-  [allVertices, allNormals, allColors, allIndices, allTexCoords] = temp;
+// Helper function untuk membuat bagian prisma dan menambahkannya ke array spesifik
+function _createPrismPart(width, height, depth, color, transformMatrix, outVertices, outNormals, outColors, outIndices) {
+  const tempAllVertices = allVertices, tempAllNormals = allNormals, tempAllColors = allColors, tempAllIndices = allIndices, tempAllTexCoords = allTexCoords;
+  allVertices = outVertices; allNormals = outNormals; allColors = outColors; allIndices = outIndices; allTexCoords = [];
+  createPrism(width, height, depth, color, transformMatrix); // Meneruskan matriks transformasi
+  allVertices = tempAllVertices; allNormals = tempAllNormals; allColors = tempAllColors; allIndices = tempAllIndices; allTexCoords = tempAllTexCoords;
 }
-
-const PRISM_VERTICES = [vec4(-0.5,-0.5,0.5,1),vec4(0.5,-0.5,0.5,1),vec4(0.5,0.5,0.5,1),vec4(-0.5,0.5,0.5,1),vec4(-0.5,-0.5,-0.5,1),vec4(-0.5,0.5,-0.5,1),vec4(0.5,0.5,-0.5,1),vec4(0.5,-0.5,-0.5,1),vec4(-0.5,0.5,0.5,1),vec4(0.5,0.5,0.5,1),vec4(0.5,0.5,-0.5,1),vec4(-0.5,0.5,-0.5,1),vec4(-0.5,-0.5,-0.5,1),vec4(0.5,-0.5,-0.5,1),vec4(0.5,-0.5,0.5,1),vec4(-0.5,-0.5,0.5,1),vec4(0.5,-0.5,0.5,1),vec4(0.5,-0.5,-0.5,1),vec4(0.5,0.5,-0.5,1),vec4(0.5,0.5,0.5,1),vec4(-0.5,-0.5,-0.5,1),vec4(-0.5,-0.5,0.5,1),vec4(-0.5,0.5,0.5,1),vec4(-0.5,0.5,-0.5,1)];
-const PRISM_NORMALS = [vec3(0,0,1),vec3(0,0,1),vec3(0,0,1),vec3(0,0,1),vec3(0,0,-1),vec3(0,0,-1),vec3(0,0,-1),vec3(0,0,-1),vec3(0,1,0),vec3(0,1,0),vec3(0,1,0),vec3(0,1,0),vec3(0,-1,0),vec3(0,-1,0),vec3(0,-1,0),vec3(0,-1,0),vec3(1,0,0),vec3(1,0,0),vec3(1,0,0),vec3(1,0,0),vec3(-1,0,0),vec3(-1,0,0),vec3(-1,0,0),vec3(-1,0,0)];
-const PRISM_INDICES = [0,1,2,0,2,3,4,5,6,4,6,7,8,9,10,8,10,11,12,13,14,12,14,15,16,17,18,16,18,19,20,21,22,20,22,23];
 
 function createPrism(width, height, depth, color, transformMatrix = mat4(), texCoords = null) {
   const indexOffset = allVertices.length;
-  const finalTexCoords = texCoords ? [texCoords[0],texCoords[1],texCoords[2],texCoords[3],...Array(20).fill(vec2(0,0))] : Array(24).fill(vec2(0,0));
+  const vertices = [vec4(-0.5,-0.5,0.5,1),vec4(0.5,-0.5,0.5,1),vec4(0.5,0.5,0.5,1),vec4(-0.5,0.5,0.5,1),vec4(-0.5,-0.5,-0.5,1),vec4(-0.5,0.5,-0.5,1),vec4(0.5,0.5,-0.5,1),vec4(0.5,-0.5,-0.5,1),vec4(-0.5,0.5,0.5,1),vec4(0.5,0.5,0.5,1),vec4(0.5,0.5,-0.5,1),vec4(-0.5,0.5,-0.5,1),vec4(-0.5,-0.5,-0.5,1),vec4(0.5,-0.5,-0.5,1),vec4(0.5,-0.5,0.5,1),vec4(-0.5,-0.5,0.5,1),vec4(0.5,-0.5,0.5,1),vec4(0.5,-0.5,-0.5,1),vec4(0.5,0.5,-0.5,1),vec4(0.5,0.5,0.5,1),vec4(-0.5,-0.5,-0.5,1),vec4(-0.5,-0.5,0.5,1),vec4(-0.5,0.5,0.5,1),vec4(-0.5,0.5,-0.5,1)];
+  const finalTexCoords = texCoords || Array(24).fill(vec2(0, 0));
+  const baseTexCoords = [finalTexCoords[0],finalTexCoords[1],finalTexCoords[2],finalTexCoords[3],...Array(20).fill(vec2(0, 0))];
+  const normals = [vec3(0,0,1),vec3(0,0,1),vec3(0,0,1),vec3(0,0,1),vec3(0,0,-1),vec3(0,0,-1),vec3(0,0,-1),vec3(0,0,-1),vec3(0,1,0),vec3(0,1,0),vec3(0,1,0),vec3(0,1,0),vec3(0,-1,0),vec3(0,-1,0),vec3(0,-1,0),vec3(0,-1,0),vec3(1,0,0),vec3(1,0,0),vec3(1,0,0),vec3(1,0,0),vec3(-1,0,0),vec3(-1,0,0),vec3(-1,0,0),vec3(-1,0,0)];
+  const indices = [0,1,2,0,2,3,4,5,6,4,6,7,8,9,10,8,10,11,12,13,14,12,14,15,16,17,18,16,18,19,20,21,22,20,22,23];
   const finalMatrix = mult(transformMatrix, scale(width, height, depth));
   const nMatrix = normalMatrix(finalMatrix, true);
-  
-  PRISM_VERTICES.forEach((v, i) => {
-    const tv = mult(finalMatrix, v);
-    const tn = mult(nMatrix, PRISM_NORMALS[i]);
+  for (let i = 0; i < vertices.length; i++) {
+    const tv = mult(finalMatrix, vertices[i]);
+    const tn = mult(nMatrix, normals[i]);
     allVertices.push(vec3(tv[0], tv[1], tv[2]));
     allNormals.push(normalize(vec3(tn[0], tn[1], tn[2])));
-    allTexCoords.push(finalTexCoords[i]);
+    allTexCoords.push(baseTexCoords[i] || vec2(0, 0));
     allColors.push(color);
-  });
-  
-  PRISM_INDICES.forEach(idx => allIndices.push(idx + indexOffset));
+  }
+  for (let i = 0; i < indices.length; i++) {
+    allIndices.push(indices[i] + indexOffset);
+  }
 }
 
 function createCylinder(radius, height, color, transformMatrix = mat4()) {
-  const segments = 20, angleStep = (2 * Math.PI) / segments, halfHeight = height / 2;
-  const indexOffset = allVertices.length, nMatrix = normalMatrix(transformMatrix, true);
-  const baseVertices = [], baseNormals = [], baseIndices = [];
-  
-  // Side vertices
+  const segments = 20;
+  const angleStep = (2 * Math.PI) / segments;
+  const halfHeight = height / 2;
+  const indexOffset = allVertices.length;
+  const finalMatrix = transformMatrix;
+  const nMatrix = normalMatrix(finalMatrix, true);
+  let baseVertices = [];
+  let baseNormals = [];
+  let baseIndices = [];
   for (let i = 0; i <= segments; i++) {
-    const angle = i * angleStep, x = Math.cos(angle), z = Math.sin(angle);
-    baseVertices.push(vec4(radius * x, halfHeight, radius * z, 1.0), vec4(radius * x, -halfHeight, radius * z, 1.0));
-    baseNormals.push(vec3(x, 0, z), vec3(x, 0, z));
+    const angle = i * angleStep;
+    const x = Math.cos(angle);
+    const z = Math.sin(angle);
+    const sideNormal = vec3(x, 0, z);
+    baseVertices.push(vec4(radius * x, halfHeight, radius * z, 1.0));
+    baseNormals.push(sideNormal);
+    baseVertices.push(vec4(radius * x, -halfHeight, radius * z, 1.0));
+    baseNormals.push(sideNormal);
   }
-  
-  // Side indices
   for (let i = 0; i < segments; i++) {
     const i0 = i * 2, i1 = i0 + 1, i2 = i0 + 2, i3 = i0 + 3;
     baseIndices.push(i0, i1, i2, i1, i3, i2);
   }
-  
-  // Caps
-  [[halfHeight, vec3(0,1,0), 1], [-halfHeight, vec3(0,-1,0), -1]].forEach(([y, normal, dir]) => {
-    const capOffset = baseVertices.length;
-    baseVertices.push(vec4(0, y, 0, 1.0));
-    baseNormals.push(normal);
-    for (let i = 0; i <= segments; i++) {
-      const angle = i * angleStep;
-      baseVertices.push(vec4(radius * Math.cos(angle), y, radius * Math.sin(angle), 1.0));
-      baseNormals.push(normal);
-    }
-    for (let i = 0; i < segments; i++) {
-      baseIndices.push(capOffset, capOffset + i + (dir > 0 ? 1 : 2), capOffset + i + (dir > 0 ? 2 : 1));
-    }
-  });
-  
-  // Transform and add to global arrays
-  baseVertices.forEach((v, i) => {
-    const tv = mult(transformMatrix, v), tn = mult(nMatrix, baseNormals[i]);
+  let capVertexOffset = baseVertices.length;
+  baseVertices.push(vec4(0, halfHeight, 0, 1.0));
+  baseNormals.push(vec3(0, 1, 0));
+  for (let i = 0; i <= segments; i++) {
+    const angle = i * angleStep;
+    const x = Math.cos(angle);
+    const z = Math.sin(angle);
+    baseVertices.push(vec4(radius * x, halfHeight, radius * z, 1.0));
+    baseNormals.push(vec3(0, 1, 0));
+  }
+  for (let i = 0; i < segments; i++) {
+    baseIndices.push(capVertexOffset, capVertexOffset + i + 1, capVertexOffset + i + 2);
+  }
+  capVertexOffset = baseVertices.length;
+  baseVertices.push(vec4(0, -halfHeight, 0, 1.0));
+  baseNormals.push(vec3(0, -1, 0));
+  for (let i = 0; i <= segments; i++) {
+    const angle = i * angleStep;
+    const x = Math.cos(angle);
+    const z = Math.sin(angle);
+    baseVertices.push(vec4(radius * x, -halfHeight, radius * z, 1.0));
+    baseNormals.push(vec3(0, -1, 0));
+  }
+  for (let i = 0; i < segments; i++) {
+    baseIndices.push(capVertexOffset, capVertexOffset + i + 2, capVertexOffset + i + 1);
+  }
+  for (let i = 0; i < baseVertices.length; i++) {
+    const tv = mult(finalMatrix, baseVertices[i]);
+    const tn = mult(nMatrix, baseNormals[i]);
     allVertices.push(vec3(tv[0], tv[1], tv[2]));
     allNormals.push(normalize(vec3(tn[0], tn[1], tn[2])));
     allColors.push(color);
-  });
-  baseIndices.forEach(idx => allIndices.push(idx + indexOffset));
+  }
+  for (let i = 0; i < baseIndices.length; i++) {
+    allIndices.push(baseIndices[i] + indexOffset);
+  }
 }
 
 function createMainBuffers() {
@@ -426,26 +477,22 @@ function createMainBuffers() {
 }
 
 function setupObjectBuffers(vertices, normals, colors, indices) {
-    const buffers = ['cBuffer', 'nBuffer', 'vBuffer', 'iBuffer'].reduce((acc, name, i) => {
-        acc[name] = gl.createBuffer();
-        return acc;
-    }, {});
-    const attribs = {
-        aColor: gl.getAttribLocation(program, 'aColor'),
-        aNormal: gl.getAttribLocation(program, 'aNormal'),
-        aPosition: gl.getAttribLocation(program, 'aPosition')
-    };
-    
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.cBuffer);
+    const aColor = gl.getAttribLocation(program, 'aColor');
+    const aNormal = gl.getAttribLocation(program, 'aNormal');
+    const aPosition = gl.getAttribLocation(program, 'aPosition');
+    const cBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, cBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, flatten(colors), gl.STATIC_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.nBuffer);
+    const nBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, nBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, flatten(normals), gl.STATIC_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.vBuffer);
+    const vBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, flatten(vertices), gl.STATIC_DRAW);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.iBuffer);
+    const iBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, iBuffer);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
-    
-    return { ...buffers, numIndices: indices.length, attribs };
+    return { cBuffer, nBuffer, vBuffer, iBuffer, numIndices: indices.length, attribs: { aColor, aNormal, aPosition } };
 }
 
 function bindMainBuffersAndEnableAttributes() {
@@ -469,8 +516,17 @@ function bindMainBuffersAndEnableAttributes() {
 }
 
 function hexToVec4(hex) {
-  const h = hex.length == 4 ? hex.split('').slice(1).map(c => c + c).join('') : hex.slice(1);
-  return vec4(parseInt(h.slice(0,2), 16)/255, parseInt(h.slice(2,4), 16)/255, parseInt(h.slice(4,6), 16)/255, 1.0);
+  let r = 0, g = 0, b = 0;
+  if (hex.length == 4) {
+    r = parseInt(hex[1] + hex[1], 16);
+    g = parseInt(hex[2] + hex[2], 16);
+    b = parseInt(hex[3] + hex[3], 16);
+  } else if (hex.length == 7) {
+    r = parseInt(hex[1] + hex[2], 16);
+    g = parseInt(hex[3] + hex[4], 16);
+    b = parseInt(hex[5] + hex[6], 16);
+  }
+  return vec4(r / 255, g / 255, b / 255, 1.0);
 }
 
 function updateFrameColor(color) {
@@ -489,187 +545,219 @@ function disableAutoLight() {
 }
 
 function setupEventListeners() {
-  // Light controls
-  ['x', 'y', 'z'].forEach((axis, i) => {
-    document.getElementById(`light-${axis}`).oninput = (e) => { 
-      lightPosition[i] = parseFloat(e.target.value); 
-      disableAutoLight(); 
-    };
-  });
-  
-  ['ambient', 'diffuse', 'specular'].forEach(type => {
-    document.getElementById(`light-${type}`).oninput = (e) => {
-      window[`light${type.charAt(0).toUpperCase() + type.slice(1)}`] = hexToVec4(e.target.value);
-    };
-  });
-  
+  document.getElementById('light-x').oninput = (e) => { lightPosition[0] = parseFloat(e.target.value); disableAutoLight(); };
+  document.getElementById('light-y').oninput = (e) => { lightPosition[1] = parseFloat(e.target.value); disableAutoLight(); };
+  document.getElementById('light-z').oninput = (e) => { lightPosition[2] = parseFloat(e.target.value); disableAutoLight(); };
+  document.getElementById('light-ambient').oninput = (e) => (lightAmbient = hexToVec4(e.target.value));
+  document.getElementById('light-diffuse').oninput = (e) => (lightDiffuse = hexToVec4(e.target.value));
+  document.getElementById('light-specular').oninput = (e) => (lightSpecular = hexToVec4(e.target.value));
   document.getElementById('shininess').oninput = (e) => (materialShininess = parseFloat(e.target.value));
 
   document.getElementById('frame-color').oninput = (e) => {
     isFrameRgbCycling = false;
     document.getElementById('frame-rgb-toggle').innerText = '🌈 Mode: Warna Statis';
-    updateFrameColor(hexToVec4(e.target.value));
+    frameColor = hexToVec4(e.target.value);
+    updateFrameColor(frameColor);
   };
-  
   document.getElementById('frame-rgb-toggle').onclick = () => {
     isFrameRgbCycling = !isFrameRgbCycling;
     document.getElementById('frame-rgb-toggle').innerText = isFrameRgbCycling ? '🌈 Mode: Warna RGB' : '🌈 Mode: Warna Statis';
   };
 
-  const textureMap = { white: whiteTexture, text: textTexture, checkerboard: checkerboardTexture, image: imageTexture };
   document.getElementById('texture-select').onchange = (e) => {
-    currentTexture = textureMap[e.target.value];
-    if (e.target.value === 'white') clearDrawing();
+    switch (e.target.value) {
+      case 'white': currentTexture = whiteTexture; clearDrawing(); break;
+      case 'text': currentTexture = textTexture; break;
+      case 'checkerboard': currentTexture = checkerboardTexture; break;
+      case 'image': currentTexture = imageTexture; break;
+    }
   };
-  document.getElementById('texture-mode').onchange = (e) => (textureMode = parseInt(e.target.value));
-
-  const toggleAnimation = (isActive, varName, btnId, activeText, inactiveText, otherBtns = []) => {
-    window[varName] = isActive;
-    isShowcaseAnimating = false;
-    animationTime = 0;
-    document.getElementById(btnId).innerText = isActive ? activeText : inactiveText;
-    otherBtns.forEach(([id, text]) => document.getElementById(id).innerText = text);
-  };
+  document.getElementById('texture-mode').onchange = (e) => { textureMode = parseInt(e.target.value); };
 
   document.getElementById('draw-animation-toggle').onclick = () => {
-    toggleAnimation(!isDrawingAnimation, 'isDrawingAnimation', 'draw-animation-toggle', 
-      '✏️ Hentikan Animasi', '✏️ Mulai Animasi Menggambar', 
-      [['erase-animation-toggle', '🧽 Mulai Animasi Menghapus']]);
-    isErasingAnimation = false;
+      isShowcaseAnimating = false;
+      isDrawingAnimation = !isDrawingAnimation;
+      isErasingAnimation = false;
+      animationTime = 0;
+      document.getElementById('draw-animation-toggle').innerText = isDrawingAnimation ? '✏️ Hentikan Animasi' : '✏️ Mulai Animasi Menggambar';
+      document.getElementById('erase-animation-toggle').innerText = '🧽 Mulai Animasi Menghapus';
   };
 
   document.getElementById('erase-animation-toggle').onclick = () => {
-    toggleAnimation(!isErasingAnimation, 'isErasingAnimation', 'erase-animation-toggle',
-      '🧽 Hentikan Animasi', '🧽 Mulai Animasi Menghapus',
-      [['draw-animation-toggle', '✏️ Mulai Animasi Menggambar']]);
-    isDrawingAnimation = false;
+      isShowcaseAnimating = false;
+      isErasingAnimation = !isErasingAnimation;
+      isDrawingAnimation = false;
+      animationTime = 0;
+      document.getElementById('erase-animation-toggle').innerText = isErasingAnimation ? '🧽 Hentikan Animasi' : '🧽 Mulai Animasi Menghapus';
+      document.getElementById('draw-animation-toggle').innerText = '✏️ Mulai Animasi Menggambar';
   };
 
   document.getElementById('clear-board-button').onclick = clearDrawing;
 
   const stopAnimations = () => {
-    [isDrawingAnimation, isErasingAnimation, isShowcaseAnimating] = [false, false, false];
-    [['draw-animation-toggle', '✏️ Mulai Animasi Menggambar'],
-     ['erase-animation-toggle', '🧽 Mulai Animasi Menghapus'],
-     ['showcase-animation-toggle', '▶️ Mulai Animasi Showcase']]
-      .forEach(([id, text]) => document.getElementById(id).innerText = text);
+      isDrawingAnimation = false;
+      isErasingAnimation = false;
+      isShowcaseAnimating = false;
+      document.getElementById('draw-animation-toggle').innerText = '✏️ Mulai Animasi Menggambar';
+      document.getElementById('erase-animation-toggle').innerText = '🧽 Mulai Animasi Menghapus';
+      document.getElementById('showcase-animation-toggle').innerText = '▶️ Mulai Animasi Showcase';
+  }
+
+  canvas.onmousedown = (e) => {
+    if (isAutoRotating) {
+      isAutoRotating = false;
+      document.getElementById('auto-rotate-toggle').innerText = '▶️ Mulai Rotasi Otomatis';
+    }
+    mouseDown = true;
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
+    stopAnimations();
+  };
+  canvas.onmouseup = () => (mouseDown = false);
+  canvas.onmouseleave = () => (mouseDown = false);
+  canvas.onmousemove = (e) => {
+    if (!mouseDown) return;
+    const deltaX = e.clientX - lastMouseX;
+    const deltaY = e.clientY - lastMouseY;
+    if (isBoardOnlyRotation) {
+      boardOnlyRotationAngle += deltaY;
+    } else {
+      rotationAngles.y += deltaX;
+      rotationAngles.x += deltaY;
+    }
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
   };
 
-  const handleInteraction = (callback) => {
+  canvas.addEventListener('wheel', (e) => { e.preventDefault(); const dir = e.deltaY < 0 ? 1 : -1; zoomFactor *= 1 + dir * ZOOM_STEP; zoomFactor = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoomFactor)); }, { passive: false });
+
+  window.addEventListener('keydown', (e) => {
     if (isAutoRotating) {
       isAutoRotating = false;
       document.getElementById('auto-rotate-toggle').innerText = '▶️ Mulai Rotasi Otomatis';
     }
     stopAnimations();
-    callback();
-  };
+    const k = e.key.toLowerCase();
+    const key = e.key;
+    if (key === '+' || key === '=') zoomFactor = Math.min(zoomFactor * (1 + ZOOM_STEP), ZOOM_MAX);
+    else if (key === '-' || key === '_') zoomFactor = Math.max(zoomFactor * (1 - ZOOM_STEP), ZOOM_MIN);
 
-  canvas.onmousedown = (e) => handleInteraction(() => {
-    mouseDown = true;
-    lastMouseX = e.clientX;
-    lastMouseY = e.clientY;
-  });
-  
-  canvas.onmouseup = canvas.onmouseleave = () => (mouseDown = false);
-  
-  canvas.onmousemove = (e) => {
-    if (!mouseDown) return;
-    const deltaX = e.clientX - lastMouseX, deltaY = e.clientY - lastMouseY;
-    isBoardOnlyRotation ? (boardOnlyRotationAngle += deltaY) : (rotationAngles.y += deltaX, rotationAngles.x += deltaY);
-    [lastMouseX, lastMouseY] = [e.clientX, e.clientY];
-  };
+    if (['w', 'a', 's', 'd', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key)) e.preventDefault();
 
-  canvas.addEventListener('wheel', (e) => { 
-    e.preventDefault(); 
-    zoomFactor = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoomFactor * (1 + (e.deltaY < 0 ? 1 : -1) * ZOOM_STEP)));
-  }, { passive: false });
+    if (isBoardOnlyRotation) {
+      if (k === 'w') boardOnlyRotationAngle -= ROT_SPEED;
+      if (k === 's') boardOnlyRotationAngle += ROT_SPEED;
+      return;
+    }
 
-  window.addEventListener('keydown', (e) => {
-    handleInteraction(() => {
-      const k = e.key.toLowerCase(), key = e.key;
-      if (key === '+' || key === '=') zoomFactor = Math.min(zoomFactor * (1 + ZOOM_STEP), ZOOM_MAX);
-      else if (key === '-' || key === '_') zoomFactor = Math.max(zoomFactor * (1 - ZOOM_STEP), ZOOM_MIN);
-
-      if (['w', 'a', 's', 'd', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(key)) e.preventDefault();
-
-      if (isBoardOnlyRotation) {
-        if (k === 'w') boardOnlyRotationAngle -= ROT_SPEED;
-        if (k === 's') boardOnlyRotationAngle += ROT_SPEED;
-        return;
-      }
-
-      const rotMap = { w: [-ROT_SPEED, 'x'], s: [ROT_SPEED, 'x'], a: [-ROT_SPEED, 'y'], d: [ROT_SPEED, 'y'] };
-      const transMap = { ArrowUp: [TRANSLATION_SPEED, 'y'], ArrowDown: [-TRANSLATION_SPEED, 'y'], 
-                        ArrowLeft: [-TRANSLATION_SPEED, 'x'], ArrowRight: [TRANSLATION_SPEED, 'x'] };
-      
-      if (rotMap[k]) rotationAngles[rotMap[k][1]] += rotMap[k][0];
-      if (transMap[key]) translationOffsets[transMap[key][1]] += transMap[key][0];
-    });
+    switch (k) {
+      case 'w': rotationAngles.x -= ROT_SPEED; break;
+      case 's': rotationAngles.x += ROT_SPEED; break;
+      case 'a': rotationAngles.y -= ROT_SPEED; break;
+      case 'd': rotationAngles.y += ROT_SPEED; break;
+    }
+    switch (key) {
+      case 'ArrowUp': translationOffsets.z -= TRANSLATION_SPEED; wheelRotationAngle -= TRANSLATION_SPEED * WHEEL_ROLL_FACTOR; break; // Mundur (menjauhi kamera), roda berputar mundur
+      case 'ArrowDown': translationOffsets.z += TRANSLATION_SPEED; wheelRotationAngle += TRANSLATION_SPEED * WHEEL_ROLL_FACTOR; break; // Maju (mendekati kamera), roda berputar maju
+      case 'ArrowLeft': translationOffsets.x -= TRANSLATION_SPEED; break;
+      case 'ArrowRight': translationOffsets.x += TRANSLATION_SPEED; break;
+    }
   });
 
   document.getElementById('reset-button').onclick = () => {
-    [rotationAngles, boardOnlyRotationAngle, wheelRotationAngle, scaleFactors, translationOffsets, zoomFactor, isPerspective, 
-     isAutoRotating, isFrameRgbCycling, lightPosition, lightAmbient, lightDiffuse, lightSpecular, materialShininess, 
-     isLightAutoMoving, lightAnimationTime, currentTexture, textureMode] = 
-    [{x: -20, y: 30}, 0, 0, {x: 1.0, y: 1.0, z: 1.0}, {x: 0.0, y: 0.0, z: 0.0}, 1.0, true, false, false,
-     vec4(1.5, 2.0, 4.0, 1.0), hexToVec4('#202020'), hexToVec4('#ffffff'), hexToVec4('#ffffff'), 100.0, false, 0,
-     whiteTexture, 0];
-    
-    const inputValues = {'scale-x': 1.0, 'scale-y': 1.0, 'light-x': 1.5, 'light-y': 2.0, 'light-z': 4.0, 'shininess': 100,
-                        'light-ambient': '#202020', 'light-diffuse': '#ffffff', 'light-specular': '#ffffff', 
-                        'frame-color': '#c2c2c2', 'texture-select': 'white', 'texture-mode': '0'};
-    Object.keys(inputValues).forEach(id => document.getElementById(id).value = inputValues[id]);
-    
-    ['auto-rotate-toggle', 'auto-light-toggle', 'frame-rgb-toggle'].forEach((id, i) => 
-      document.getElementById(id).innerText = ['▶️ Mulai Rotasi Otomatis', '▶️ Mulai Gerak Cahaya Otomatis', '🌈 Mode: Warna Statis'][i]);
-    
-    updateFrameColor(hexToVec4('#c2c2c2'));
+    rotationAngles = { x: -20, y: 30 };
+    boardOnlyRotationAngle = 0;
+    wheelRotationAngle = 0;
+    scaleFactors = { x: 1.0, y: 1.0, z: 1.0 };
+    translationOffsets = { x: 0.0, y: 0.0, z: 0.0 };
+    zoomFactor = 1.0;
+    isPerspective = true;
+    isAutoRotating = false;
+    document.getElementById('auto-rotate-toggle').innerText = '▶️ Mulai Rotasi Otomatis';
+    document.getElementById('scale-x').value = 1.0;
+    document.getElementById('scale-y').value = 1.0;
+    document.getElementById('light-x').value = 1.5;
+    document.getElementById('light-y').value = 2.0;
+    document.getElementById('light-z').value = 4.0;
+    document.getElementById('light-ambient').value = '#202020';
+    document.getElementById('light-diffuse').value = '#ffffff';
+    document.getElementById('light-specular').value = '#ffffff';
+    document.getElementById('shininess').value = 100;
+    lightPosition = vec4(1.5, 2.0, 4.0, 1.0);
+    lightAmbient = hexToVec4('#202020');
+    lightDiffuse = hexToVec4('#ffffff');
+    lightSpecular = hexToVec4('#ffffff');
+    materialShininess = 100.0;
+    isLightAutoMoving = false;
+    document.getElementById('auto-light-toggle').innerText = '▶️ Mulai Gerak Cahaya Otomatis';
+    lightAnimationTime = 0;
+
+    isFrameRgbCycling = false;
+    document.getElementById('frame-rgb-toggle').innerText = '🌈 Mode: Warna Statis';
+    document.getElementById('frame-color').value = '#c2c2c2';
+    frameColor = hexToVec4('#c2c2c2');
+    updateFrameColor(frameColor);
+
+    document.getElementById('texture-select').value = 'white';
+    document.getElementById('texture-mode').value = '0';
+    currentTexture = whiteTexture;
+    textureMode = 0;
+
     stopAnimations();
     clearDrawing();
   };
 
-  const toggleButtons = [
-    ['board-rotation-toggle', () => isBoardOnlyRotation, ['↕️ Mode: Putar Papan Saja', '↔️ Mode: Putar Semua Objek']],
-    ['projection-toggle', () => isPerspective, ['🔭 Mode: Proyeksi Perspektif', '📐 Mode: Proyeksi Ortografik']],
-    ['auto-rotate-toggle', () => isAutoRotating, ['⏸️ Hentikan Rotasi', '▶️ Mulai Rotasi Otomatis']],
-    ['auto-light-toggle', () => isLightAutoMoving, ['⏸️ Hentikan Gerak Cahaya', '▶️ Mulai Gerak Cahaya Otomatis']]
-  ];
-  
-  toggleButtons.forEach(([id, getState, [trueText, falseText]]) => {
-    document.getElementById(id).onclick = () => {
-      const varName = id.replace(/-toggle$/, '').split('-').map((w, i) => 
-        i === 0 ? 'is' : w.charAt(0).toUpperCase() + w.slice(1)).join('').replace('is', 'is');
-      const stateVar = id.includes('board') ? 'isBoardOnlyRotation' : 
-                      id.includes('projection') ? 'isPerspective' :
-                      id.includes('auto-rotate') ? 'isAutoRotating' : 'isLightAutoMoving';
-      window[stateVar] = !window[stateVar];
-      document.getElementById(id).innerText = window[stateVar] ? trueText : falseText;
-    };
-  });
+  document.getElementById('board-rotation-toggle').onclick = () => {
+    isBoardOnlyRotation = !isBoardOnlyRotation;
+    document.getElementById('board-rotation-toggle').innerText = isBoardOnlyRotation ? '↕️ Mode: Putar Papan Saja' : '↔️ Mode: Putar Semua Objek';
+  };
+
+  document.getElementById('projection-toggle').onclick = () => {
+    isPerspective = !isPerspective;
+    document.getElementById('projection-toggle').innerHTML = isPerspective ? '🔭 Mode: Proyeksi Perspektif' : '📐 Mode: Proyeksi Ortografik';
+  };
+
+  document.getElementById('auto-rotate-toggle').onclick = () => {
+    isAutoRotating = !isAutoRotating;
+    document.getElementById('auto-rotate-toggle').innerText = isAutoRotating ? '⏸️ Hentikan Rotasi' : '▶️ Mulai Rotasi Otomatis';
+  };
+
+  document.getElementById('auto-light-toggle').onclick = () => {
+    isLightAutoMoving = !isLightAutoMoving;
+    document.getElementById('auto-light-toggle').innerText = isLightAutoMoving ? '⏸️ Hentikan Gerak Cahaya' : '▶️ Mulai Gerak Cahaya Otomatis';
+  };
 
   document.getElementById('showcase-animation-toggle').onclick = () => {
     isShowcaseAnimating = !isShowcaseAnimating;
-    document.getElementById('showcase-animation-toggle').innerText = isShowcaseAnimating ? '⏹️ Hentikan Showcase' : '▶️ Mulai Animasi Showcase';
-    
     if (isShowcaseAnimating) {
-      [isAutoRotating, isDrawingAnimation, isErasingAnimation, isLightAutoMoving] = [false, false, false, false];
-      ['auto-rotate-toggle', 'draw-animation-toggle', 'erase-animation-toggle', 'auto-light-toggle']
-        .forEach((id, i) => document.getElementById(id).innerText = 
-          ['▶️ Mulai Rotasi Otomatis', '✏️ Mulai Animasi Menggambar', '🧽 Mulai Animasi Menghapus', '▶️ Mulai Gerak Cahaya Otomatis'][i]);
-      
-      Object.assign(rotationAngles, {x: -20, y: 30});
-      [boardOnlyRotationAngle, wheelRotationAngle] = [0, 0];
-      Object.assign(translationOffsets, {x: 0.0, y: 0.0, z: 0.0});
+      isAutoRotating = false;
+      isDrawingAnimation = false;
+      isErasingAnimation = false;
+      isLightAutoMoving = false;
+      document.getElementById('auto-rotate-toggle').innerText = '▶️ Mulai Rotasi Otomatis';
+      document.getElementById('draw-animation-toggle').innerText = '✏️ Mulai Animasi Menggambar';
+      document.getElementById('erase-animation-toggle').innerText = '🧽 Mulai Animasi Menghapus';
+      document.getElementById('auto-light-toggle').innerText = '▶️ Mulai Gerak Cahaya Otomatis';
+
+      // Soft reset
+      rotationAngles = { x: -20, y: 30 };
+      boardOnlyRotationAngle = 0;
+      wheelRotationAngle = 0;
+      translationOffsets = { x: 0.0, y: 0.0, z: 0.0 };
       zoomFactor = 1.0;
-      [showcaseStage, showcaseTime] = [0, 0];
       clearDrawing();
+
+      showcaseStage = 0;
+      showcaseTime = 0;
+      document.getElementById('showcase-animation-toggle').innerText = '⏹️ Hentikan Showcase';
     } else {
+      document.getElementById('showcase-animation-toggle').innerText = '▶️ Mulai Animasi Showcase';
       document.getElementById('reset-button').click();
     }
   };
 
-  ['scale-x', 'scale-y'].forEach(id => 
-    document.getElementById(id).oninput = (e) => scaleFactors[id.split('-')[1]] = parseFloat(e.target.value));
+  document.getElementById('scale-x').oninput = (e) => (scaleFactors.x = parseFloat(e.target.value));
+  document.getElementById('scale-y').oninput = (e) => (scaleFactors.y = parseFloat(e.target.value));
 }
 
 function drawObject(buffers, modelMatrix) {
@@ -739,57 +827,77 @@ function render() {
 
   if (isShowcaseAnimating) {
     showcaseTime += deltaTime;
-    const stageDuration = 4, t = showcaseTime / stageDuration;
+
+    const stageDuration = 4;
+    const t = showcaseTime / stageDuration;
 
     if (showcaseTime > stageDuration) {
-      [showcaseTime, showcaseStage] = [0, showcaseStage + 1];
-      Object.assign(rotationAngles, {x: -20, y: 30});
-      [boardOnlyRotationAngle, wheelRotationAngle] = [0, 0];
-      Object.assign(translationOffsets, {x: 0.0, y: 0.0, z: 0.0});
-      [isDrawingAnimation, isErasingAnimation, animationTime] = [false, false, 0];
-      clearDrawing();
+        showcaseTime = 0;
+        showcaseStage++;
 
-      if (showcaseStage > 5) {
-        isShowcaseAnimating = false;
-        showcaseStage = 0;
-        document.getElementById('showcase-animation-toggle').innerText = '▶️ Mulai Animasi Showcase';
-        document.getElementById('reset-button').click();
-        return;
-      }
+        // Explicitly reset state from previous stage
+        rotationAngles = { x: -20, y: 30 };
+        boardOnlyRotationAngle = 0;
+        wheelRotationAngle = 0;
+        translationOffsets = { x: 0.0, y: 0.0, z: 0.0 };
+        isDrawingAnimation = false;
+        isErasingAnimation = false;
+        animationTime = 0;
+        clearDrawing();
+
+        if (showcaseStage > 5) {
+            isShowcaseAnimating = false;
+            showcaseStage = 0;
+            document.getElementById('showcase-animation-toggle').innerText = '▶️ Mulai Animasi Showcase';
+            document.getElementById('reset-button').click();
+            return;
+        }
     }
 
-    const stages = [
-      () => wheelRotationAngle = 720 * t,
-      () => boardOnlyRotationAngle = 180 * Math.sin(t * Math.PI),
-      () => { translationOffsets.z = 1.5 * Math.sin(t * Math.PI); wheelRotationAngle = -translationOffsets.z * 200; },
-      () => { rotationAngles.y = 30 + 180 * t; boardOnlyRotationAngle = 90 * Math.sin(t * Math.PI * 2); },
-      () => { rotationAngles.y = 30 + 360 * t; rotationAngles.x = -20 + 45 * Math.sin(t * Math.PI); },
-      () => { rotationAngles.y = 30 + 120 * t; isDrawingAnimation = true; }
-    ];
-    stages[showcaseStage]();
+    switch (showcaseStage) {
+        case 0: // Wheels Only
+            wheelRotationAngle = 720 * t;
+            break;
+        case 1: // Board Only
+            boardOnlyRotationAngle = 180 * Math.sin(t * Math.PI);
+            break;
+        case 2: // Stand + Wheels
+            translationOffsets.z = 1.5 * Math.sin(t * Math.PI);
+            wheelRotationAngle = -translationOffsets.z * 200;
+            break;
+        case 3: // Stand + Board
+            rotationAngles.y = 30 + 180 * t;
+            boardOnlyRotationAngle = 90 * Math.sin(t * Math.PI * 2);
+            break;
+        case 4: // Root move
+            rotationAngles.y = 30 + 360 * t;
+            rotationAngles.x = -20 + 45 * Math.sin(t * Math.PI);
+            break;
+        case 5: // Drawing on moving board
+            rotationAngles.y = 30 + 120 * t;
+            isDrawingAnimation = true;
+            break;
+    }
   }
 
   if (isDrawingAnimation || isErasingAnimation) {
     animationTime += deltaTime * 1.5;
-    const maxTime = isDrawingAnimation ? 3 : 2;
-    if (animationTime > maxTime) { 
-      animationTime = 0; 
-      if (!isShowcaseAnimating) { 
-        isDrawingAnimation = isErasingAnimation = false; 
-      }
-    }
+    if (isDrawingAnimation && animationTime > 3) { animationTime = 0; if(!isShowcaseAnimating) isDrawingAnimation=false; }
+    if (isErasingAnimation && animationTime > 2) { animationTime = 0; if(!isShowcaseAnimating) isErasingAnimation=false; }
 
-    const getAnimPos = () => {
-      if (isDrawingAnimation) {
-        const [p1, p2, p3] = [vec2(-.4,-.3), vec2(.4,-.3), vec2(0,.4)];
-        const animT = (animationTime / 3.0) * 3;
-        return animT < 1 ? mix(p1, p2, animT) : animT < 2 ? mix(p2, p3, animT - 1) : mix(p3, p1, animT - 2);
-      }
-      return vec2(-0.6 + 1.2 * (animationTime / 2), 0.2 * Math.sin(animationTime * Math.PI * 4));
-    };
-    
-    const pos = getAnimPos();
-    const texX = (pos[0] + 0.75) / 1.5, texY = (pos[1] + 0.5) / 1.0;
+    let animX3D, animY3D;
+    if (isDrawingAnimation) {
+      const p1=vec2(-.4,-.3), p2=vec2(.4,-.3), p3=vec2(0,.4);
+      const animT = animationTime / 3.0 * 3;
+      if (animT < 1) { const pos=mix(p1,p2,animT); animX3D=pos[0]; animY3D=pos[1]; }
+      else if (animT < 2) { const pos=mix(p2,p3,animT-1); animX3D=pos[0]; animY3D=pos[1]; }
+      else { const pos=mix(p3,p1,animT-2); animX3D=pos[0]; animY3D=pos[1]; }
+    } else { 
+      animX3D = -0.6 + 1.2 * (animationTime / 2);
+      animY3D = 0.2 * Math.sin(animationTime * Math.PI * 4);
+    }
+    const texX = (animX3D + 0.75) / 1.5;
+    const texY = (animY3D + 0.5) / 1.0;
     drawOnBoard(texX * 2 - 1, texY * 2 - 1, isErasingAnimation);
   }
 
@@ -800,87 +908,130 @@ function render() {
 
   if (isLightAutoMoving) {
     lightAnimationTime += 0.008;
-    const [radius, yAmplitude, yOffset] = [6.0, 3.0, 2.5];
-    [lightPosition[0], lightPosition[1], lightPosition[2]] = [
-      Math.cos(lightAnimationTime) * radius,
-      Math.sin(lightAnimationTime) * yAmplitude + yOffset,
-      Math.sin(lightAnimationTime) * radius
-    ];
-    ['light-x', 'light-y', 'light-z'].forEach((id, i) => 
-      document.getElementById(id).value = lightPosition[i]);
+    const radius = 6.0, yAmplitude = 3.0, yOffset = 2.5;
+    lightPosition[0] = Math.cos(lightAnimationTime) * radius;
+    lightPosition[1] = Math.sin(lightAnimationTime) * yAmplitude + yOffset;
+    lightPosition[2] = Math.sin(lightAnimationTime) * radius;
+    document.getElementById('light-x').value = lightPosition[0];
+    document.getElementById('light-y').value = lightPosition[1];
+    document.getElementById('light-z').value = lightPosition[2];
   }
 
   if (isFrameRgbCycling) {
     frameRgbTime += 0.02;
-    const [r, g, b] = [0, 2, 4].map(offset => Math.sin(frameRgbTime + offset) * 0.5 + 0.5);
-    updateFrameColor(vec4(r, g, b, 1.0));
-    document.getElementById('frame-color').value = '#' + [r, g, b]
-      .map(c => Math.round(c * 255).toString(16).padStart(2, '0')).join('');
+    const r = Math.sin(frameRgbTime*1) * 0.5 + 0.5;
+    const g = Math.sin(frameRgbTime*1 + 2) * 0.5 + 0.5;
+    const b = Math.sin(frameRgbTime*1 + 4) * 0.5 + 0.5;
+    frameColor = vec4(r, g, b, 1.0);
+    updateFrameColor(frameColor);
+    const hexColor = '#' + [r,g,b].map(c => Math.round(c*255).toString(16).padStart(2,'0')).join('');
+    document.getElementById('frame-color').value = hexColor;
   }
 
   const aspect = canvas.width / canvas.height;
-  projectionMatrix = isPerspective ? perspective(45, aspect, 0.1, 100) : 
-    (() => { const zoom = 3.0; return ortho(-zoom * aspect, zoom * aspect, -zoom, zoom, -10, 10); })();
+  if (isPerspective) {
+    projectionMatrix = perspective(45, aspect, 0.1, 100);
+  } else {
+    const zoom = 3.0;
+    projectionMatrix = ortho(-zoom * aspect, zoom * aspect, -zoom, zoom, -10, 10);
+  }
   gl.uniformMatrix4fv(projectionMatrixLoc, false, flatten(projectionMatrix));
 
-  let baseMatrix = mult(scale(scaleFactors.x * zoomFactor, scaleFactors.y * zoomFactor, scaleFactors.z * zoomFactor),
-                        mult(rotateX(rotationAngles.x), rotateY(rotationAngles.y)));
-  baseMatrix = mult(translate(translationOffsets.x, translationOffsets.y, -5 + translationOffsets.z), baseMatrix);
+  let baseMatrix = mult(rotateX(rotationAngles.x), rotateY(rotationAngles.y));
+  baseMatrix = mult(scale(scaleFactors.x * zoomFactor, scaleFactors.y * zoomFactor, scaleFactors.z * zoomFactor), baseMatrix);
 
-  [uLightPositionLoc, uLightAmbientLoc, uLightDiffuseLoc, uLightSpecularLoc, uShininessLoc]
-    .forEach((loc, i) => gl[i < 4 ? 'uniform4fv' : 'uniform1f'](loc, 
-      i < 4 ? flatten([lightPosition, lightAmbient, lightDiffuse, lightSpecular][i]) : materialShininess));
+  // Pisahkan matriks view (kamera) dari matriks translasi objek
+  const cameraViewMatrix = translate(0.0, 0.0, -5); // Kamera mundur
+  const objectTranslationMatrix = translate(translationOffsets.x, translationOffsets.y, translationOffsets.z); // Pergeseran dari panah
+
+  baseMatrix = mult(cameraViewMatrix, mult(objectTranslationMatrix, baseMatrix));
+
+  gl.uniform4fv(uLightPositionLoc, flatten(lightPosition));
+  gl.uniform4fv(uLightAmbientLoc, flatten(lightAmbient));
+  gl.uniform4fv(uLightDiffuseLoc, flatten(lightDiffuse));
+  gl.uniform4fv(uLightSpecularLoc, flatten(lightSpecular));
+  gl.uniform1f(uShininessLoc, materialShininess);
 
   bindMainBuffersAndEnableAttributes();
 
-  [currentTexture, drawingTexture].forEach((tex, i) => {
-    gl.activeTexture(gl.TEXTURE0 + i);
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.uniform1i([uSamplerLoc, uDrawingSamplerLoc][i], i);
-  });
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, currentTexture);
+  gl.uniform1i(uSamplerLoc, 0);
+
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, drawingTexture);
+  gl.uniform1i(uDrawingSamplerLoc, 1);
+
   gl.uniform1i(uTextureModeLoc, textureMode);
 
   const boardRotationMatrix = rotateX(boardOnlyRotationAngle);
-  const drawWithMatrix = (matrix, count, offset = 0) => {
-    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(matrix));
-    gl.uniformMatrix3fv(nMatrixLoc, false, flatten(normalMatrix(matrix, true)));
-    gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_SHORT, offset);
-  };
+  modelViewMatrix = mult(baseMatrix, boardRotationMatrix);
+  gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(modelViewMatrix));
+  let nMatrix = normalMatrix(modelViewMatrix, true);
+  gl.uniformMatrix3fv(nMatrixLoc, false, flatten(nMatrix));
+  gl.drawElements(gl.TRIANGLES, boardIndicesCount, gl.UNSIGNED_SHORT, 0);
 
-  drawWithMatrix(mult(baseMatrix, boardRotationMatrix), boardIndicesCount);
-  drawWithMatrix(baseMatrix, allIndices.length - boardIndicesCount, boardIndicesCount * 2);
+  modelViewMatrix = baseMatrix;
+  gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(modelViewMatrix));
+  nMatrix = normalMatrix(modelViewMatrix, true);
+  gl.uniformMatrix3fv(nMatrixLoc, false, flatten(nMatrix));
+  gl.drawElements(gl.TRIANGLES, allIndices.length - boardIndicesCount, gl.UNSIGNED_SHORT, boardIndicesCount * 2);
 
   const boardObjectBaseMatrix = mult(baseMatrix, boardRotationMatrix);
+
   const trayY = -0.55, trayZ = 0.05;
 
-  const getAnimPos = () => {
-    if (!isDrawingAnimation) return null;
-    const [p1, p2, p3] = [vec2(-.4,-.3), vec2(.4,-.3), vec2(0,.4)];
-    const animT = (animationTime / 3.0) * 3;
-    return animT < 1 ? mix(p1, p2, animT) : animT < 2 ? mix(p2, p3, animT - 1) : mix(p3, p1, animT - 2);
-  };
-
-  const animPos = getAnimPos();
-  const markerMatrix = animPos ? 
-    mult(mult(boardObjectBaseMatrix, translate(animPos[0], animPos[1], 0.02)), rotateZ(90)) :
-    mult(boardObjectBaseMatrix, translate(-0.3, trayY + 0.02, trayZ));
+  let markerMatrix;
+  if (isDrawingAnimation) {
+      let animX, animY;
+      const p1=vec2(-.4,-.3), p2=vec2(.4,-.3), p3=vec2(0,.4);
+      const animT = animationTime / 3.0 * 3;
+      if (animT < 1) { const pos=mix(p1,p2,animT); animX=pos[0]; animY=pos[1]; }
+      else if (animT < 2) { const pos=mix(p2,p3,animT-1); animX=pos[0]; animY=pos[1]; }
+      else { const pos=mix(p3,p1,animT-2); animX=pos[0]; animY=pos[1]; }
+      const animZ = 0.02;
+      // Pindahkan spidol ke posisi di papan
+      markerMatrix = mult(boardObjectBaseMatrix, translate(animX, animY, animZ));
+      // Putar spidol 90 derajat pada sumbu X agar ujungnya menunjuk ke papan
+      markerMatrix = mult(markerMatrix, rotateX(90));
+  } else {
+      markerMatrix = mult(boardObjectBaseMatrix, translate(-0.3, trayY + 0.02, trayZ));
+  }
   drawObject(markerBuffers, markerMatrix);
 
-  const eraserAnimPos = isErasingAnimation ? 
-    vec2(-0.6 + 1.2 * (animationTime / 2), 0.2 * Math.sin(animationTime * Math.PI * 4)) : null;
-  const eraserMatrix = eraserAnimPos ?
-    mult(boardObjectBaseMatrix, translate(eraserAnimPos[0], eraserAnimPos[1], 0.02)) :
-    mult(boardObjectBaseMatrix, translate(0.3, trayY + 0.05, trayZ));
+  let eraserMatrix;
+  if (isErasingAnimation) {
+      const animX = -0.6 + 1.2 * (animationTime / 2);
+      const animY = 0.2 * Math.sin(animationTime * Math.PI * 4);
+      const animZ = 0.02;
+      eraserMatrix = mult(boardObjectBaseMatrix, translate(animX, animY, animZ));
+  } else {
+      eraserMatrix = mult(boardObjectBaseMatrix, translate(0.3, trayY + 0.05, trayZ));
+  }
   drawObject(eraserBuffers, eraserMatrix);
 
   // Draw Wheels
-  const standHeight = 1.2, standOffset = 1.5 / 2, feetDepth = 0.6;
-  const wheelYPos = -standHeight + 0.05 - 0.05, wheelOffsetZ = feetDepth / 2 - 0.03;
-  const wheelTransforms = [[-standOffset, -wheelOffsetZ], [-standOffset, wheelOffsetZ], 
-                           [standOffset, -wheelOffsetZ], [standOffset, wheelOffsetZ]];
-  
-  wheelTransforms.forEach(([x, z]) => {
-    let wheelMatrix = mult(mult(baseMatrix, translate(x, wheelYPos, z)), rotateZ(90));
-    drawObject(wheelBuffers, mult(wheelMatrix, rotateX(wheelRotationAngle)));
-  });
+  const standHeight = 1.2, standOffset = 1.5 / 2;
+  const feetDepth = 0.6;
+  const feetYPos = -standHeight + 0.05;
+  const wheelYPos = feetYPos - 0.05;
+  const wheelOffsetZ = feetDepth / 2 - 0.03;
+  const wheelInitialRotation = rotateZ(90);
+  const wheelAnimRotation = rotateX(wheelRotationAngle);
+
+  const wheelPositions = [
+      translate(-standOffset, wheelYPos, -wheelOffsetZ),
+      translate(-standOffset, wheelYPos, wheelOffsetZ),
+      translate(standOffset, wheelYPos, -wheelOffsetZ),
+      translate(standOffset, wheelYPos, wheelOffsetZ)
+  ];
+
+  for(const pos of wheelPositions) {
+      let wheelMatrix = mult(baseMatrix, pos);
+      wheelMatrix = mult(wheelMatrix, wheelInitialRotation);
+      wheelMatrix = mult(wheelMatrix, wheelAnimRotation);
+      drawObject(wheelBuffers, wheelMatrix);
+  }
+
+  // Gambar alas statis (platform)
 }
