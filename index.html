@@ -84,6 +84,11 @@
         box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
         margin-top: 6px auto;
       }
+      .media-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr); /* Membuat 2 kolom */
+        gap: 16px; /* Jarak antar video */
+      }
       .media-item {
   display: flex;
   flex-direction: column;
@@ -136,6 +141,10 @@
         padding: 5px;
         border-left: 2px solid #0077b6;
         background-color: #f0f8ff;
+      }
+      #task-breakdown ul ul {
+        padding-left: 20px;
+        list-style-type: disc;
       }
     </style>
   </head>
@@ -321,6 +330,84 @@
             Browser Anda tidak mendukung video tag.
           </video>
           <p class="caption">Video 4 — Seluruh Papan bisa Bergerak.</p>
+        </div>
+      </div>
+
+      <div class="card" id="task-breakdown">
+        <h3>Pembagian Tugas Proyek</h3>
+        <p>Berikut adalah pembagian tugas inti untuk kelompok kami:</p>
+
+        <h4>Felda Ega Fadhila: Pengembang Geometri & Animasi Inti</h4>
+        <p>Fokus utama adalah pada mekanika pergerakan objek 3D di dalam scene, termasuk bagaimana objek-objek tersebut bertransformasi dan berinteraksi satu sama lain.</p>
+        <ul>
+          <li>
+            <strong>Pembuatan Objek (Modelling):</strong>
+            <ul>
+              <li>Membangun semua objek 3D utama (papan, bingkai, rangka penopang, roda, spidol, penghapus, alas).</li>
+              <li>Memastikan hierarki objek (misalnya, roda terhubung ke rangka, spidol/penghapus ke papan) berfungsi dengan benar.</li>
+            </ul>
+          </li>
+          <li>
+            <strong>Animasi & Pergerakan:</strong>
+            <ul>
+              <li>Mengimplementasikan logika untuk rotasi global papan tulis dan seluruh scene (menggunakan `rotationAngles` dari input WASD dan mouse drag).</li>
+              <li>Mengimplementasikan logika untuk rotasi papan tulis saja (`boardOnlyRotationAngle` dari input WASD dan mouse drag).</li>
+              <li>Mengimplementasikan logika untuk translasi/geser papan tulis (`translationOffsets` dari tombol panah).</li>
+              <li>Mengimplementasikan logika untuk zoom (zoomFactor dari scroll mouse dan tombol +/-).</li>
+              <li>Mengimplementasikan logika untuk rotasi otomatis seluruh scene dan papan tulis (`isAutoRotating`).</li>
+            </ul>
+          </li>
+          <li>
+            <strong>Animasi Objek Spesifik:</strong>
+            <ul>
+              <li>Mengembangkan jalur pergerakan dan transformasi spidol selama animasi menggambar (menentukan `animX`, `animY`, `animZ` spidol, serta rotasi spidol agar ujungnya menunjuk ke papan).</li>
+              <li>Mengembangkan jalur pergerakan dan transformasi penghapus selama animasi menghapus.</li>
+              <li>Mengimplementasikan mekanika putaran roda (`wheelRotationAngle`) yang disinkronkan dengan pergerakan maju/mundur papan tulis (`translationOffsets.z`).</li>
+            </ul>
+          </li>
+          <li>
+            <strong>Orkestrasi Animasi Showcase:</strong>
+            <ul>
+              <li>Mendefinisikan urutan, waktu, dan jenis pergerakan untuk setiap tahap dalam animasi showcase (`showcaseStage`, `showcaseTime`). Ini termasuk mengkoordinasikan perubahan `rotationAngles`, `translationOffsets`, `boardOnlyRotationAngle`, `wheelRotationAngle`, dan memicu `isDrawingAnimation`/`isErasingAnimation` pada waktu yang tepat.</li>
+            </ul>
+          </li>
+        </ul>
+
+        <h4>Nashwan Nashir Ramadhan: Pengembang Visual & Interaksi UI</h4>
+        <p>Fokus utama adalah pada efek visual animasi dan bagaimana pengguna dapat mengontrolnya melalui antarmuka.</p>
+        <ul>
+          <li>
+            <strong>Pencahayaan (Lighting):</strong>
+            <ul>
+              <li>Mengimplementasikan model pencahayaan (Phong Shading) di shader.</li>
+              <li>Mengatur posisi dan properti cahaya (warna ambient, diffuse, specular, shininess).</li>
+              <li>Mengimplementasikan kontrol UI untuk semua pengaturan pencahayaan.</li>
+            </ul>
+          </li>
+          <li>
+            <strong>Tekstur (Texturing):</strong>
+            <ul>
+              <li>Mengimplementasikan semua jenis tekstur (polos, teks, catur, gambar) dan penerapannya pada objek.</li>
+              <li>Mengimplementasikan Frame Buffer Object (FBO) untuk fitur menggambar dan menghapus di papan tulis.</li>
+              <li>Mengimplementasikan kontrol UI untuk pemilihan tekstur dan mode tekstur.</li>
+            </ul>
+          </li>
+          <li>
+            <strong>Antarmuka Pengguna (UI) & Kontrol:</strong>
+            <ul>
+              <li>Merancang dan menyusun `index.html` untuk semua kontrol.</li>
+              <li>Mengimplementasikan semua event listeners untuk tombol, slider, dan dropdown yang mengontrol scene (reset, rotasi, proyeksi, skala, visibilitas alas, dll.).</li>
+            </ul>
+          </li>
+          <li>
+            <strong>Animasi Efek Visual:</strong>
+            <ul>
+              <li>Mengimplementasikan logika untuk gerak cahaya otomatis (`isLightAutoMoving`, `lightAnimationTime`), termasuk pembaruan posisi cahaya di UI.</li>
+              <li>Mengimplementasikan logika untuk RGB cycling warna frame (`isFrameRgbCycling`, `frameRgbTime`), termasuk pembaruan warna di UI.</li>
+              <li>Bertanggung jawab atas implementasi fungsi `drawOnBoard` yang sebenarnya melakukan rendering "tinta" atau "penghapusan" ke Frame Buffer Object (FBO).</li>
+            </ul>
+          </li>
+        </ul>
         </div>
     </main>
 
