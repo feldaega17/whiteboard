@@ -47,8 +47,13 @@ let wheelVertices = [],
   wheelNormals = [],
   wheelColors = [],
   wheelIndices = [];
+let platformVertices = [],
+  platformNormals = [],
+  platformColors = [],
+  platformIndices = [];
+let isPlatformVisible = true; // State untuk mengontrol visibilitas alas
 
-let markerBuffers, eraserBuffers, wheelBuffers;
+let markerBuffers, eraserBuffers, wheelBuffers, platformBuffers;
 let isDrawingAnimation = false;
 let isErasingAnimation = false;
 let animationTime = 0;
@@ -147,6 +152,7 @@ window.onload = function init() {
   createMainBuffers(); // Buffers for board and stand
 
   buildAnimatedObjects(); // Builds marker, eraser, and wheels
+  buildPlatform(); // Membuat alas statis
 
   setupEventListeners();
   clearDrawing();
@@ -355,6 +361,19 @@ function buildAnimatedObjects() {
   wheelVertices = []; wheelNormals = []; wheelColors = []; wheelIndices = [];
   _createCylinderPart(0.05, 0.03, wheelColor, mat4(), wheelVertices, wheelNormals, wheelColors, wheelIndices);
   wheelBuffers = setupObjectBuffers(wheelVertices, wheelNormals, wheelColors, wheelIndices);
+}
+
+// Fungsi untuk membuat alas statis
+function buildPlatform() {
+  const platformColor = vec4(0.35, 0.35, 0.4, 1.0); // Warna abu-abu gelap
+  const platformW = 3.0;
+  const platformH = 0.05;
+  const platformD = 2.0;
+  const platformY = -1.275; // Posisi Y agar tepat di bawah roda
+
+  platformVertices = []; platformNormals = []; platformColors = []; platformIndices = [];
+  _createPrismPart(platformW, platformH, platformD, platformColor, translate(0, platformY, 0), platformVertices, platformNormals, platformColors, platformIndices);
+  platformBuffers = setupObjectBuffers(platformVertices, platformNormals, platformColors, platformIndices);
 }
 
 // Helper function untuk membuat bagian silinder dan menambahkannya ke array spesifik
@@ -591,6 +610,11 @@ function setupEventListeners() {
       document.getElementById('draw-animation-toggle').innerText = '✏️ Mulai Animasi Menggambar';
   };
 
+  document.getElementById('toggle-platform-button').onclick = () => {
+    isPlatformVisible = !isPlatformVisible;
+    document.getElementById('toggle-platform-button').innerText = isPlatformVisible ? '🔲 Sembunyikan Alas' : '🔳 Tampilkan Alas';
+  };
+
   document.getElementById('clear-board-button').onclick = clearDrawing;
 
   const stopAnimations = () => {
@@ -656,8 +680,8 @@ function setupEventListeners() {
       case 'd': rotationAngles.y += ROT_SPEED; break;
     }
     switch (key) {
-      case 'ArrowUp': translationOffsets.y += TRANSLATION_SPEED; break;
-      case 'ArrowDown': translationOffsets.y -= TRANSLATION_SPEED; break;
+      case 'ArrowUp': translationOffsets.z -= TRANSLATION_SPEED; break; // Mundur (menjauhi kamera)
+      case 'ArrowDown': translationOffsets.z += TRANSLATION_SPEED; break; // Maju (mendekati kamera)
       case 'ArrowLeft': translationOffsets.x -= TRANSLATION_SPEED; break;
       case 'ArrowRight': translationOffsets.x += TRANSLATION_SPEED; break;
     }
@@ -700,6 +724,8 @@ function setupEventListeners() {
     document.getElementById('texture-select').value = 'white';
     document.getElementById('texture-mode').value = '0';
     currentTexture = whiteTexture;
+    isPlatformVisible = true;
+    document.getElementById('toggle-platform-button').innerText = '🔲 Sembunyikan Alas';
     textureMode = 0;
 
     stopAnimations();
@@ -939,8 +965,11 @@ function render() {
   let baseMatrix = mult(rotateX(rotationAngles.x), rotateY(rotationAngles.y));
   baseMatrix = mult(scale(scaleFactors.x * zoomFactor, scaleFactors.y * zoomFactor, scaleFactors.z * zoomFactor), baseMatrix);
 
-  const viewMatrix = translate(translationOffsets.x, translationOffsets.y, -5 + translationOffsets.z);
-  baseMatrix = mult(viewMatrix, baseMatrix);
+  // Pisahkan matriks view (kamera) dari matriks translasi objek
+  const cameraViewMatrix = translate(0.0, 0.0, -5); // Kamera mundur
+  const objectTranslationMatrix = translate(translationOffsets.x, translationOffsets.y, translationOffsets.z); // Pergeseran dari panah
+
+  baseMatrix = mult(cameraViewMatrix, mult(objectTranslationMatrix, baseMatrix));
 
   gl.uniform4fv(uLightPositionLoc, flatten(lightPosition));
   gl.uniform4fv(uLightAmbientLoc, flatten(lightAmbient));
@@ -1027,5 +1056,14 @@ function render() {
       wheelMatrix = mult(wheelMatrix, wheelInitialRotation);
       wheelMatrix = mult(wheelMatrix, wheelAnimRotation);
       drawObject(wheelBuffers, wheelMatrix);
+  }
+
+  // Gambar alas statis (platform)
+  // Matriksnya hanya berisi viewMatrix, tanpa transformasi objek (baseMatrix)
+  // Ini membuatnya tetap di tempatnya, tidak terpengaruh oleh translasi papan tulis.
+  // Hanya digambar jika isPlatformVisible adalah true.
+  if (isPlatformVisible) {
+    const platformMatrix = cameraViewMatrix;
+    drawObject(platformBuffers, platformMatrix);
   }
 }
