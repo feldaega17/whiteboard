@@ -138,7 +138,10 @@ window.onload = function init() {
   checkerboardTexture = createCheckerboardTexture();
   imageTexture = loadImageTexture('simba.jpeg');
   whiteTexture = createSolidColorTexture([255, 255, 255, 255]);
-  currentTexture = textTexture;
+  
+  // Set default texture state
+  document.getElementById('texture-select').value = 'white';
+  currentTexture = whiteTexture;
 
   buildWhiteboard(); // Builds the board and stand
   createMainBuffers(); // Buffers for board and stand
@@ -531,8 +534,8 @@ function setupEventListeners() {
 
   document.getElementById('texture-select').onchange = (e) => {
     switch (e.target.value) {
-      case 'text': currentTexture = textTexture; break;
       case 'white': currentTexture = whiteTexture; clearDrawing(); break;
+      case 'text': currentTexture = textTexture; break;
       case 'checkerboard': currentTexture = checkerboardTexture; break;
       case 'image': currentTexture = imageTexture; break;
     }
@@ -663,9 +666,9 @@ function setupEventListeners() {
     frameColor = hexToVec4('#c2c2c2');
     updateFrameColor(frameColor);
 
-    document.getElementById('texture-select').value = 'text';
+    document.getElementById('texture-select').value = 'white';
     document.getElementById('texture-mode').value = '0';
-    currentTexture = textTexture;
+    currentTexture = whiteTexture;
     textureMode = 0;
 
     stopAnimations();
