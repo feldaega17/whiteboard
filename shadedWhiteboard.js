@@ -73,7 +73,7 @@ let fboPointBuffer;
 let fboSquareBuffer;
 
 // --- State Tekstur ---
-let textTexture, checkerboardTexture, imageTexture;
+let textTexture, checkerboardTexture, imageTexture, whiteTexture;
 let currentTexture;
 let textureMode = 0; // 0: Modulate, 1: Decal
 
@@ -137,6 +137,7 @@ window.onload = function init() {
   textTexture = createTextTexture();
   checkerboardTexture = createCheckerboardTexture();
   imageTexture = loadImageTexture('simba.jpeg');
+  whiteTexture = createSolidColorTexture([255, 255, 255, 255]);
   currentTexture = textTexture;
 
   buildWhiteboard(); // Builds the board and stand
@@ -177,6 +178,13 @@ function getShaderLocations() {
   const eraserSize = 0.15;
   const square = [-eraserSize, -eraserSize, eraserSize, -eraserSize, -eraserSize, eraserSize, eraserSize, eraserSize];
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(square), gl.DYNAMIC_DRAW);
+}
+
+function createSolidColorTexture(color) {
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(color));
+    return texture;
 }
 
 function createTextTexture() {
@@ -318,17 +326,17 @@ function buildAnimatedObjects() {
 }
 
 function createCylinderSeparate(radius, height, color, outVertices, outNormals, outColors, outIndices) {
-  const tempAllVertices = allVertices, tempAllNormals = allNormals, tempAllColors = allColors, tempAllIndices = allIndices;
-  allVertices = outVertices; allNormals = outNormals; allColors = outColors; allIndices = outIndices;
+  const tempAllVertices = allVertices, tempAllNormals = allNormals, tempAllColors = allColors, tempAllIndices = allIndices, tempAllTexCoords = allTexCoords;
+  allVertices = outVertices; allNormals = outNormals; allColors = outColors; allIndices = outIndices; allTexCoords = [];
   createCylinder(radius, height, color, mat4());
-  allVertices = tempAllVertices; allNormals = tempAllNormals; allColors = tempAllColors; allIndices = tempAllIndices;
+  allVertices = tempAllVertices; allNormals = tempAllNormals; allColors = tempAllColors; allIndices = tempAllIndices; allTexCoords = tempAllTexCoords;
 }
 
 function createPrismSeparate(width, height, depth, color, outVertices, outNormals, outColors, outIndices) {
-  const tempAllVertices = allVertices, tempAllNormals = allNormals, tempAllColors = allColors, tempAllIndices = allIndices;
-  allVertices = outVertices; allNormals = outNormals; allColors = outColors; allIndices = outIndices;
+  const tempAllVertices = allVertices, tempAllNormals = allNormals, tempAllColors = allColors, tempAllIndices = allIndices, tempAllTexCoords = allTexCoords;
+  allVertices = outVertices; allNormals = outNormals; allColors = outColors; allIndices = outIndices; allTexCoords = [];
   createPrism(width, height, depth, color, mat4());
-  allVertices = tempAllVertices; allNormals = tempAllNormals; allColors = tempAllColors; allIndices = tempAllIndices;
+  allVertices = tempAllVertices; allNormals = tempAllNormals; allColors = tempAllColors; allIndices = tempAllIndices; allTexCoords = tempAllTexCoords;
 }
 
 function createPrism(width, height, depth, color, transformMatrix = mat4(), texCoords = null) {
@@ -409,7 +417,6 @@ function createCylinder(radius, height, color, transformMatrix = mat4()) {
     allVertices.push(vec3(tv[0], tv[1], tv[2]));
     allNormals.push(normalize(vec3(tn[0], tn[1], tn[2])));
     allColors.push(color);
-    allTexCoords.push(vec2(0,0));
   }
   for (let i = 0; i < baseIndices.length; i++) {
     allIndices.push(baseIndices[i] + indexOffset);
@@ -525,6 +532,7 @@ function setupEventListeners() {
   document.getElementById('texture-select').onchange = (e) => {
     switch (e.target.value) {
       case 'text': currentTexture = textTexture; break;
+      case 'white': currentTexture = whiteTexture; clearDrawing(); break;
       case 'checkerboard': currentTexture = checkerboardTexture; break;
       case 'image': currentTexture = imageTexture; break;
     }
